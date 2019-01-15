@@ -4,15 +4,10 @@ Write-Host -Object "Running $PSCommandpath" -ForegroundColor Cyan
 
 Describe "$CommandName Unit Tests" -Tag 'UnitTests' {
     Context "Validate parameters" {
-        $paramCount = 5
-        $commonParamCount = ([System.Management.Automation.PSCmdlet]::CommonParameters).Count
-        [object[]]$params = (Get-ChildItem function:\Get-DbaOrphanUser).Parameters.Keys
+        [object[]]$params = (Get-ChildItem function:\Get-DbaDbOrphanUser).Parameters.Keys
         $knownParameters = 'SqlInstance', 'SqlCredential', 'Database', 'ExcludeDatabase', 'EnableException'
         It "Should contain our specific parameters" {
-            ( (Compare-Object -ReferenceObject $knownParameters -DifferenceObject $params -IncludeEqual | Where-Object SideIndicator -eq "==").Count ) | Should Be $paramCount
-        }
-        It "Should only contain $paramCount parameters" {
-            $params.Count - $commonParamCount | Should Be $paramCount
+            ( (Compare-Object -ReferenceObject $knownParameters -DifferenceObject $params -IncludeEqual | Where-Object SideIndicator -eq "==").Count ) | Should Be $knownParameters.Count
         }
     }
 }
@@ -47,7 +42,7 @@ CREATE USER [dbatoolsci_orphan3] FROM LOGIN [dbatoolsci_orphan3];
     It "shows time taken for preparation" {
         1 | Should -Be 1
     }
-    $results = Get-DbaOrphanUser -SqlInstance $script:instance1 -Database dbatoolsci_orphan
+    $results = Get-DbaDbOrphanUser -SqlInstance $script:instance1 -Database dbatoolsci_orphan
     It "Finds two orphans" {
         $results.Count | Should -Be 2
         foreach ($user in $Users) {

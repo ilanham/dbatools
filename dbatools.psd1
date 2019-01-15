@@ -11,7 +11,7 @@
     RootModule             = 'dbatools.psm1'
 
     # Version number of this module.
-    ModuleVersion          = '0.9.710'
+    ModuleVersion          = '0.9.742'
 
     # ID used to uniquely identify this module
     GUID                   = '9d139310-ce45-41ce-8e8b-d76335aa1789'
@@ -105,8 +105,8 @@
         'Remove-DbaDatabaseSafely',
         'Set-DbaTempdbConfig',
         'Test-DbaTempdbConfig',
-        'Repair-DbaOrphanUser',
-        'Remove-DbaOrphanUser',
+        'Repair-DbaDbOrphanUser',
+        'Remove-DbaDbOrphanUser',
         'Find-DbaDbUnusedIndex',
         'Get-DbaDbSpace',
         'Test-DbaDbOwner',
@@ -316,7 +316,7 @@
         'New-DbaXESmartEmail',
         'New-DbaXESmartQueryExec',
         'Start-DbaXESmartTarget',
-        'Get-DbaOrphanUser',
+        'Get-DbaDbOrphanUser',
         'Get-DbaOpenTransaction',
         'Get-DbaDbLogShipError',
         'Test-DbaBuild',
@@ -431,6 +431,15 @@
         'Unregister-DbatoolsConfig',
         'Join-DbaPath',
         'Resolve-DbaPath',
+        'Invoke-DbaDbDataMasking',
+        'New-DbaDbMaskingConfig',
+        'Get-DbaDbccSessionBuffer',
+        'Get-DbaDbccStatistic',
+        'Get-DbaDbDbccOpenTran',
+        'Invoke-DbaDbccDropCleanBuffer',
+        'Invoke-DbaDbDbccCheckConstraint',
+        'Invoke-DbaDbDbccCleanTable',
+        'Invoke-DbaDbDbccUpdateUsage',
         # noncoresmo
         # SMO issues
         'Export-DbaUser',
@@ -483,7 +492,7 @@
         'Read-DbaXEFile',
         'Watch-DbaXESession',
         'Test-DbaMaxMemory', # can be fixed by not testing remote when linux is detected
-        'Rename-DbaDatabase',# can maybebe fixed by not remoting when linux is detected
+        'Rename-DbaDatabase', # can maybebe fixed by not remoting when linux is detected
         # CM and Windows functions
         'Update-DbaInstance',
         'Invoke-DbaPfRelog',
@@ -602,7 +611,7 @@
     CmdletsToExport        = @(
         'Select-DbaObject',
         'Set-DbatoolsConfig'
-        )
+    )
 
     # Variables to export from this module
     VariablesToExport      = ''
@@ -628,7 +637,7 @@
             Category     = "Databases"
 
             # Keyword tags to help users find this module via navigations and search.
-            Tags         = @('sqlserver', 'migrations', 'sql', 'dba', 'databases')
+            Tags         = @('sqlserver', 'migrations', 'sql', 'dba', 'databases', 'mac', 'linux', 'core')
 
             # The web address of an icon which can be used in galleries to represent this module
             IconUri      = "https://dbatools.io/logo.png"

@@ -6,7 +6,11 @@ if (($PSVersionTable.PSVersion.Major -lt 6) -or ($PSVersionTable.Keys -contains 
     $script:isWindows = $false
 }
 
-   
+if ($PSVersionTable.PSVersion.Major -lt 3) {
+    # requires doesnt work on modules
+    throw "This module only supports PowerShell v3 and above"
+}
+
 #region Import helper functions
 function Import-ModuleFile {
     <#
@@ -434,11 +438,11 @@ $script:renames = @(
     },
     @{
         "AliasName"  = "Remove-SqlOrphanUser"
-        "Definition" = "Remove-DbaOrphanUser"
+        "Definition" = "Remove-DbaDbOrphanUser"
     },
     @{
         "AliasName"  = "Repair-SqlOrphanUser"
-        "Definition" = "Repair-DbaOrphanUser"
+        "Definition" = "Repair-DbaDbOrphanUser"
     },
     @{
         "AliasName"  = "Reset-SqlAdmin"
@@ -994,6 +998,18 @@ $script:renames = @(
     @{
         "AliasName"  = "Set-DbaJobOwner"
         "Definition" = "Set-DbaAgentJobOwner"
+    },
+    @{
+        "AliasName"  = "Get-DbaOrphanUser"
+        "Definition" = "Get-DbaDbOrphanUser"
+    },
+    @{
+        "AliasName"  = "Remove-DbaOrphanUser"
+        "Definition" = "Remove-DbaDbOrphanUser"
+    },
+    @{
+        "AliasName"  = "Repair-DbaOrphanUser"
+        "Definition" = "Repair-DbaDbOrphanUser"
     }
 )
 
@@ -1062,8 +1078,8 @@ $script:xplat = @(
     'Remove-DbaDatabaseSafely',
     'Set-DbaTempdbConfig',
     'Test-DbaTempdbConfig',
-    'Repair-DbaOrphanUser',
-    'Remove-DbaOrphanUser',
+    'Repair-DbaDbOrphanUser',
+    'Remove-DbaDbOrphanUser',
     'Find-DbaDbUnusedIndex',
     'Get-DbaDbSpace',
     'Test-DbaDbOwner',
@@ -1273,7 +1289,7 @@ $script:xplat = @(
     'New-DbaXESmartEmail',
     'New-DbaXESmartQueryExec',
     'Start-DbaXESmartTarget',
-    'Get-DbaOrphanUser',
+    'Get-DbaDbOrphanUser',
     'Get-DbaOpenTransaction',
     'Get-DbaDbLogShipError',
     'Test-DbaBuild',
@@ -1388,7 +1404,16 @@ $script:xplat = @(
     'Unregister-DbatoolsConfig',
     'Join-DbaPath',
     'Resolve-DbaPath',
-    'Import-DbaCsv'
+    'Import-DbaCsv',
+    'Invoke-DbaDbDataMasking',
+    'New-DbaDbMaskingConfig',
+    'Get-DbaDbccSessionBuffer',
+    'Get-DbaDbccStatistic',
+    'Get-DbaDbDbccOpenTran',
+    'Invoke-DbaDbccDropCleanBuffer',
+    'Invoke-DbaDbDbccCheckConstraint',
+    'Invoke-DbaDbDbccCleanTable',
+    'Invoke-DbaDbDbccUpdateUsage'
 )
 
 $script:noncoresmo = @(

@@ -207,12 +207,7 @@ function Get-SQLInstanceComponent {
                             # attempt to recover a real version of a sqlservr.exe by getting file properties from a remote machine
                             # not sure how to support SSRS/SSAS, as SSDS is the only one that has binary path in the Setup node
                             if ($binRoot = $instanceRegSetup.GetValue("SQLBinRoot")) {
-                                $fileVersion = Invoke-Command2 -ArgumentList $binRoot -Raw -Credential $Credential -ComputerName $computer -ScriptBlock {
-                                    Param (
-                                        $Path
-                                    )
-                                    (Get-Item -Path (Join-Path $Path "sqlservr.exe") -ErrorAction Stop).VersionInfo.ProductVersion
-                                }
+                                $fileVersion = (Get-Item -Path (Join-Path $binRoot "sqlservr.exe") -ErrorAction Stop).VersionInfo.ProductVersion
                                 if ($fileVersion) {
                                     $version = $fileVersion
                                     $log += "New version from the binary file: $version"
@@ -228,10 +223,6 @@ function Get-SQLInstanceComponent {
                         #region Generate return object
                         [pscustomobject]@{
                             ComputerName  = $computer.ToUpper();
-                            InstanceType  = {
-                                $componentNameMap | Where-Object { $_.ComponentName -eq $componentName } |
-                                    Select-Object -ExpandProperty DisplayName
-                            }.InvokeReturnAsIs();
                             InstanceName  = $sqlInstance;
                             InstanceID    = $instanceValue;
                             InstanceDir   = $instanceDir;
@@ -289,7 +280,8 @@ function Get-SQLInstanceComponent {
                         foreach ($regValueName in $regKey.GetValueNames()) {
                             if ($componentRegKeyName -eq 'RS' -and $regValueName -eq 'PBIRS') { continue } #filtering out Power BI - not supported
                             if ($componentRegKeyName -eq 'RS' -and $regValueName -eq 'SSRS') { continue }  #filtering out SSRS2017+ - not supported
-                            Get-SQLInstanceDetail -RegPath $regPath -Reg $reg -RegKey $regKey -Instance $regValueName;
+                            $result = Get-SQLInstanceDetail -RegPath $regPath -Reg $reg -RegKey $regKey -Instance $regValueName;
+                            $result | Add-Member -Type NoteProperty -Name InstanceType -Value ($componentNameMap | Where-Object { $_.ComponentName -eq $componentName }).DisplayName -PassThru
                         }
                     }
                 }
@@ -306,7 +298,7 @@ function Get-SQLInstanceComponent {
     process {
         foreach ($computer in $ComputerName) {
             try {
-                $results = Invoke-Command2 -ComputerName $computer -ScriptBlock $regScript -Credential $Credential -ErrorAction Stop -Raw -ArgumentList @($Component)
+                $results = Invoke-Command2 -ComputerName $computer -ScriptBlock $regScript -Credential $Credential -ErrorAction Stop -Raw -ArgumentList @($Component) -RequiredPSVersion 3.0
             } catch {
                 Stop-Function -Message "Failed to get instance components from $computer" -ErrorRecord $_ -Continue
             }

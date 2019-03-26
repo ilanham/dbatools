@@ -56,8 +56,7 @@ $scriptBlock = {
             'Microsoft.SqlServer.Types',
             'Microsoft.SqlServer.Management.RegisteredServers',
             'Microsoft.SqlTools.Hosting',
-            'Microsoft.SqlTools.ManagedBatchParser',
-            'System.Data.SqlClient'
+            'Microsoft.SqlTools.ManagedBatchParser'
         )
     } else {
         $names = @(
@@ -141,7 +140,11 @@ $scriptBlock = {
         }
     } else {
         foreach ($name in $names) {
-            Add-Type -Path (Resolve-Path -Path "$DllRoot\$name.dll")
+            try {
+                Add-Type -Path (Resolve-Path -Path "$DllRoot\$name.dll") -ErrorAction Stop
+            } catch {
+                continue
+            }
         }
     }
 }

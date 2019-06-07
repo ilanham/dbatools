@@ -1,4 +1,3 @@
-#ValidationTags#Messaging,FlowControl,Pipeline,CodeStyle#
 function New-DbaAgentSchedule {
     <#
     .SYNOPSIS
@@ -82,9 +81,6 @@ function New-DbaAgentSchedule {
 
         If force is used the start time will be '23:59:59'
 
-    .PARAMETER Owner
-        The name of the server principal that owns the schedule. If no value is given the schedule is owned by the creator.
-
     .PARAMETER WhatIf
         Shows what would happen if the command were to run. No actions are actually performed.
 
@@ -126,7 +122,6 @@ function New-DbaAgentSchedule {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseOutputTypeCorrectly", "", Justification = "PSSA Rule Ignored by BOH")]
     param (
         [parameter(Mandatory, ValueFromPipeline)]
-        [Alias("ServerInstance", "SqlServer")]
         [DbaInstanceParameter[]]$SqlInstance,
         [System.Management.Automation.PSCredential]
         $SqlCredential,
@@ -148,7 +143,6 @@ function New-DbaAgentSchedule {
         [string]$StartTime,
         [string]$EndTime,
         [switch]$Force,
-        [Alias('Silent')]
         [switch]$EnableException
     )
 
@@ -188,7 +182,7 @@ function New-DbaAgentSchedule {
             }
         }
 
-        # Check of the relative FrequencyInterval value is of type string and set the integer value
+        # Check if the relative FrequencyInterval value is of type string and set the integer value
         [int]$FrequencyRelativeInterval =
         switch ($FrequencyRelativeInterval) {
             "First" { 1 }
@@ -197,7 +191,7 @@ function New-DbaAgentSchedule {
             "Fourth" { 8 }
             "Last" { 16 }
             "Unused" { 0 }
-            default {0}
+            default { 0 }
         }
 
         # Check if the interval is valid
@@ -233,8 +227,8 @@ function New-DbaAgentSchedule {
 
             # Create the interval to hold the value(s)
             switch ($FrequencyInterval) {
-                "EveryDay" { $Interval = 1}
-                default {$Interval = 1 }
+                "EveryDay" { $Interval = 1 }
+                default { $Interval = 1 }
             }
 
         }
@@ -257,7 +251,7 @@ function New-DbaAgentSchedule {
                     "Saturday" { $Interval += 64 }
                     "Weekdays" { $Interval = 62 }
                     "Weekend" { $Interval = 65 }
-                    "EveryDay" {$Interval = 127 }
+                    "EveryDay" { $Interval = 127 }
                     1 { $Interval += 1 }
                     2 { $Interval += 2 }
                     4 { $Interval += 4 }
@@ -267,7 +261,7 @@ function New-DbaAgentSchedule {
                     64 { $Interval += 64 }
                     62 { $Interval = 62 }
                     65 { $Interval = 65 }
-                    127 {$Interval = 127 }
+                    127 { $Interval = 127 }
                     default { $Interval = 0 }
                 }
             }
@@ -282,7 +276,7 @@ function New-DbaAgentSchedule {
             foreach ($Item in $FrequencyInterval) {
                 $FrequencyInterval
                 switch ($Item) {
-                    {[int]$_ -ge 1 -and [int]$_ -le 31} { $Interval = [int]$Item }
+                    { [int]$_ -ge 1 -and [int]$_ -le 31 } { $Interval = [int]$Item }
                 }
             }
 

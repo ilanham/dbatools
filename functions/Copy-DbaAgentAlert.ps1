@@ -84,7 +84,6 @@ function Copy-DbaAgentAlert {
         [object[]]$ExcludeAlert,
         [switch]$IncludeDefaults,
         [switch]$Force,
-        [Alias('Silent')]
         [switch]$EnableException
     )
     begin {
@@ -134,6 +133,8 @@ function Copy-DbaAgentAlert {
                     $copyAgentAlertStatus | Select-DefaultView -Property DateTime, SourceServer, DestinationServer, Name, Type, Status, Notes -TypeName MigrationObject
                 }
             }
+
+            $destServerOperators = $destServer.JobServer.Operators
 
             foreach ($serverAlert in $serverAlerts) {
                 $alertName = $serverAlert.name
@@ -319,8 +320,5 @@ function Copy-DbaAgentAlert {
                 }
             }
         }
-    }
-    end {
-        Test-DbaDeprecation -DeprecatedOn "1.0.0" -EnableException:$false -Alias Copy-SqlAlert
     }
 }

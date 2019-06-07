@@ -1,4 +1,3 @@
-#ValidationTags#Messaging,FlowControl,Pipeline,CodeStyle#
 function Get-DbaBackupHistory {
     <#
     .SYNOPSIS
@@ -60,6 +59,9 @@ function Get-DbaBackupHistory {
 
     .PARAMETER LastLsn
         Specifies a minimum LSN to use in filtering backup history. Only backups with an LSN greater than this value will be returned, which helps speed the retrieval process.
+
+    .PARAMETER IncludeMirror
+        By default mirrors of backups are not returned, this switch will cause them to be returned
 
     .PARAMETER EnableException
         By default, when something goes wrong we try to catch it, interpret it and give you a friendly warning message.
@@ -124,7 +126,7 @@ function Get-DbaBackupHistory {
         Returns information about all Full backups for AdventureWorks2014 on sql2014.
 
     .EXAMPLE
-        PS C:\> Get-DbaCmsRegServer -SqlInstance sql2016 | Get-DbaBackupHistory
+        PS C:\> Get-DbaRegServer -SqlInstance sql2016 | Get-DbaBackupHistory
 
         Returns database backup information for every database on every server listed in the Central Management Server on sql2016.
 
@@ -142,12 +144,9 @@ function Get-DbaBackupHistory {
     [CmdletBinding(DefaultParameterSetName = "Default")]
     param (
         [parameter(Mandatory, ValueFromPipeline)]
-        [Alias("ServerInstance", "SqlServer")]
         [DbaInstanceParameter[]]
         $SqlInstance,
-        [Alias("Credential")]
         [PsCredential]$SqlCredential,
-        [Alias("Databases")]
         [object[]]$Database,
         [object[]]$ExcludeDatabase,
         [switch]$IncludeCopyOnly,
@@ -167,9 +166,9 @@ function Get-DbaBackupHistory {
         [string[]]$DeviceType,
         [switch]$Raw,
         [bigint]$LastLsn,
+        [switch]$IncludeMirror,
         [ValidateSet("Full", "Log", "Differential", "File", "Differential File", "Partial Full", "Partial Differential")]
         [string[]]$Type,
-        [Alias('Silent')]
         [switch]$EnableException
     )
 
@@ -368,6 +367,9 @@ function Get-DbaBackupHistory {
                     if ($true -ne $IncludeCopyOnly) {
                         $whereCopyOnly = " AND is_copy_only='0' "
                     }
+                    if ($true -ne $IncludeMirror) {
+                        $whereMirror = " AND mediafamily.mirror='0' "
+                    }
                     if ($deviceTypeFilter) {
                         $devTypeFilterWhere = "AND mediafamily.device_type $deviceTypeFilterRight"
                     }
@@ -484,6 +486,7 @@ function Get-DbaBackupHistory {
                                 $devTypeFilterWhere
                                 $sinceSqlFilter
                                 $recoveryForkSqlFilter
+                                $whereMirror
                                 ) AS a
                                 WHERE a.BackupSetRank = 1
                                 ORDER BY a.Type;

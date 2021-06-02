@@ -14,7 +14,11 @@ function New-DbaDbDataGeneratorConfig {
         The target SQL Server instance or instances.
 
     .PARAMETER SqlCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Database
         Databases to process through
@@ -37,6 +41,12 @@ function New-DbaDbDataGeneratorConfig {
 
     .PARAMETER Force
         Forcefully execute commands when needed
+
+    .PARAMETER WhatIf
+        Shows what would happen if the command were to run. No actions are actually performed.
+
+    .PARAMETER Confirm
+        Prompts you for confirmation before executing any changing operations within the command.
 
     .PARAMETER EnableException
         By default, when something goes wrong we try to catch it, interpret it and give you a friendly warning message.
@@ -65,7 +75,7 @@ function New-DbaDbDataGeneratorConfig {
         Process only table Customer with all the columns
 
     #>
-    [CmdLetBinding()]
+    [CmdLetBinding(SupportsShouldProcess, ConfirmImpact = 'Low')]
     param (
         [parameter(Mandatory)]
         [DbaInstanceParameter[]]$SqlInstance,
@@ -204,6 +214,10 @@ function New-DbaDbDataGeneratorConfig {
                                 $maskingType = "Name"
                                 $maskingSubtype = "Lastname"
                             }
+                            "fullname" {
+                                $maskingType = "Name"
+                                $maskingSubtype = "FullName"
+                            }
                             "creditcard" {
                                 $maskingType = "Finance"
                                 $maskingSubtype = "CreditcardNumber"
@@ -253,15 +267,18 @@ function New-DbaDbDataGeneratorConfig {
                                 $MaxValue = 2147483647
                             }
                             "date" {
-                                $subType = "Date"
+                                $type = "Date"
+                                $subType = "Past"
                                 $MaxValue = $null
                             }
                             "datetime" {
-                                $subType = "Date"
+                                $type = "Date"
+                                $subType = "Past"
                                 $MaxValue = $null
                             }
                             "datetime2" {
-                                $subType = "Date"
+                                $type = "Date"
+                                $subType = "Past"
                                 $MaxValue = $null
                             }
                             "float" {
@@ -340,6 +357,7 @@ function New-DbaDbDataGeneratorConfig {
             if ($tables) {
                 $results += [PSCustomObject]@{
                     Name   = $db.Name
+                    Type   = "DataGenerationConfiguration"
                     Tables = $tables
                 }
             } else {
@@ -350,13 +368,18 @@ function New-DbaDbDataGeneratorConfig {
         # Write the data to the Path
         if ($results) {
             try {
-                $temppath = "$Path\$($server.Name.Replace('\', '$')).$($db.Name).tables.json"
+                $temppath = "$Path\$($server.Name.Replace('\', '$')).$($db.Name).DataGeneratorConfig.json"
                 if (-not $script:isWindows) {
                     $temppath = $temppath.Replace("\", "/")
                 }
-
-                Set-Content -Path $temppath -Value ($results | ConvertTo-Json -Depth 5)
-                Get-ChildItem -Path $temppath
+                if (Test-Path -Path $temppath -PathType Leaf) {
+                    if ($Pscmdlet.ShouldProcess("$temppath", "Saving results to json")) {
+                        Set-Content -Path $temppath -Value ($results | ConvertTo-Json -Depth 5)
+                    }
+                } else {
+                    Set-Content -Path $temppath -Value ($results | ConvertTo-Json -Depth 5)
+                    Get-ChildItem -Path $temppath
+                }
             } catch {
                 Stop-Function -Message "Something went wrong writing the results to the Path" -Target $Path -Continue -ErrorRecord $_
             }

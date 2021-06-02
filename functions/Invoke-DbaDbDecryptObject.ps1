@@ -4,18 +4,20 @@ function Invoke-DbaDbDecryptObject {
         Invoke-DbaDbDecryptObject returns the decrypted version of an object
 
     .DESCRIPTION
-        When a procedure or a function is created with encryption and you lost the code you're in trouble.
-        You cannot alter the object or view the definition.
-        With this command you can search for the object and decrypt the it.
+        SQL Server provides an option to encrypt the code used in various types of objects.
+        If the original code is no longer available for an encrypted object it won't be possible to view the definition.
+        With this command the dedicated admin connection (DAC) can be used to search for the object and decrypt it.
 
-        The command will output the results to the console.
+        The command will output the results to the console by default.
         There is an option to export all the results to a folder creating .sql files.
 
-        Make sure the instance allowed dedicated administrator connections (DAC).
+        To connect to a remote SQL instance the remote dedicated administrator connection option will need to be configured.
         The binary versions of the objects can only be retrieved using a DAC connection.
-        You can check the DAC connection with:
+        You can check the remote DAC connection with:
         'Get-DbaSpConfigure -SqlInstance [yourinstance] -ConfigName RemoteDacConnectionsEnabled'
         It should say 1 in the ConfiguredValue.
+
+        The local DAC connection is enabled by default.
 
         To change the configurations you can use the Set-DbaSpConfigure command:
         'Set-DbaSpConfigure -SqlInstance [yourinstance] -ConfigName RemoteDacConnectionsEnabled -Value 1'
@@ -25,20 +27,24 @@ function Invoke-DbaDbDecryptObject {
         The target SQL Server instance
 
     .PARAMETER SqlCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Database
-        Database to look through for the object.
+        Database to search for the object.
 
     .PARAMETER ObjectName
         The name of the object to search for in the database.
 
     .PARAMETER EncodingType
-        The encoding that's used to decrypt and encrypt values.
+        The encoding type used to decrypt and encrypt values.
 
     .PARAMETER ExportDestination
-        Used for exporting the results to.
-        The destiation will use the instance name, database name and object type i.e.: C:\temp\decrypt\SQLDB1\DB1\StoredProcedure
+        Location to output the decrypted object definitions.
+        The destination will use the instance name, database name and object type i.e.: C:\temp\decrypt\SQLDB1\DB1\StoredProcedure
 
     .PARAMETER EnableException
         By default, when something goes wrong we try to catch it, interpret it and give you a friendly warning message.
@@ -166,40 +172,50 @@ function Invoke-DbaDbDecryptObject {
         foreach ($instance in $SqlInstance) {
 
             # Check the configuration of the intance to see if the DAC is enabled
-            $config = Get-DbaSpConfigure -SqlInstance $instance -ConfigName RemoteDacConnectionsEnabled
+            $config = Get-DbaSpConfigure -SqlInstance $instance -SqlCredential $SqlCredential -ConfigName RemoteDacConnectionsEnabled
             if ($config.ConfiguredValue -ne 1) {
-                Stop-Function -Message "DAC is not enabled for instance $instance.`nPlease use 'Set-DbaSpConfigure -SqlInstance $instance -ConfigName RemoteDacConnectionsEnabled -Value 1' to configure the instance to allow DAC connections" -Target $instance -Continue
+                Stop-Function -Message "DAC is not enabled for instance $instance.`nPlease use 'Set-DbaSpConfigure -SqlInstance $instance -SqlCredential <credential> -ConfigName RemoteDacConnectionsEnabled -Value 1' to configure the instance to allow DAC connections" -Target $instance -Continue
             }
 
             # Try to connect to instance
             try {
                 $server = New-Object Microsoft.SqlServer.Management.Smo.Server "ADMIN:$instance"
+
+                # credential usage
+                if ($null -ne $SqlCredential) {
+                    $context = $server.ConnectionContext
+                    $context.LoginSecure = $false  # this allows for SQL auth to be done
+                    $context.Login = $SqlCredential.UserName
+                    $context.SecurePassword = $SqlCredential.Password
+                }
             } catch {
                 Stop-Function -Message "Error occurred while establishing connection to $instance" -Category ConnectionError -ErrorRecord $_ -Target $instance -Continue
             }
 
             # Get all the databases that compare to the database parameter
-            $databaseCollection = $server.Databases | Where-Object {$_.Name -in $Database}
+            $databaseCollection = $server.Databases | Where-Object { $_.Name -in $Database }
+
+            # Use the table's schema for the trigger's schema. The schema name is not returned as a property for triggers (except in the URN).
+            $triggerSchema = @{label = "Schema"; expression = { $_.Parent.Schema } }
 
             # Loop through each of databases
             foreach ($db in $databaseCollection) {
+
+                $triggers = @($db.Tables | Where-Object { $_.IsSystemObject -eq $false } | ForEach-Object { $_.Triggers })
+
                 # Get the objects
                 if ($ObjectName) {
-                    $storedProcedures = @($db.StoredProcedures | Where-Object {$_.Name -in $ObjectName -and $_.IsEncrypted -eq $true} | Select-Object Name, Schema, @{N = "ObjectType"; E = {'StoredProcedure'}}, @{N = "SubType"; E = {''}})
-                    $functions = @($db.UserDefinedFunctions | Where-Object {$_.Name -in $ObjectName -and $_.IsEncrypted -eq $true} | Select-Object Name, Schema, @{N = "ObjectType"; E = {"UserDefinedFunction"}}, @{N = "SubType"; E = {$_.FunctionType.ToString().Trim()}})
-                    $views = @($db.Views | Where-Object {$_.Name -in $ObjectName -and $_.IsEncrypted -eq $true} | Select-Object Name, Schema, @{N = "ObjectType"; E = {'View'}}, @{N = "SubType"; E = {''}})
+                    $storedProcedures = @($db.StoredProcedures | Where-Object { $_.Name -in $ObjectName -and $_.IsEncrypted -eq $true } | Select-Object Name, Schema, @{N = "ObjectType"; E = { 'StoredProcedure' } }, @{N = "SubType"; E = { '' } })
+                    $functions = @($db.UserDefinedFunctions | Where-Object { $_.Name -in $ObjectName -and $_.IsEncrypted -eq $true } | Select-Object Name, Schema, @{N = "ObjectType"; E = { "UserDefinedFunction" } }, @{N = "SubType"; E = { $_.FunctionType.ToString().Trim() } })
+                    $views = @($db.Views | Where-Object { $_.Name -in $ObjectName -and $_.IsEncrypted -eq $true } | Select-Object Name, Schema, @{N = "ObjectType"; E = { 'View' } }, @{N = "SubType"; E = { '' } })
+                    $triggers = @($triggers | Where-Object { $_.Name -in $ObjectName -and $_.IsEncrypted -eq $true } | Select-Object Name, $triggerSchema, Parent, @{N = "ObjectType"; E = { 'Trigger' } }, @{N = "SubType"; E = { '' } })
                 } else {
                     # Get all encrypted objects
-                    $storedProcedures = @($db.StoredProcedures | Where-Object {$_.IsEncrypted -eq $true} | Select-Object Name, Schema, @{N = "ObjectType"; E = {'StoredProcedure'}}, @{N = "SubType"; E = {''}})
-                    $functions = @($db.UserDefinedFunctions | Where-Object {$_.IsEncrypted -eq $true} | Select-Object Name, Schema, @{N = "ObjectType"; E = {"UserDefinedFunction"}}, @{N = "SubType"; E = {$_.FunctionType.ToString().Trim()}})
-                    $views = @($db.Views | Where-Object {$_.IsEncrypted -eq $true} | Select-Object Name, Schema, @{N = "ObjectType"; E = {'View'}}, @{N = "SubType"; E = {''}})
+                    $storedProcedures = @($db.StoredProcedures | Where-Object { $_.IsEncrypted -eq $true } | Select-Object Name, Schema, @{N = "ObjectType"; E = { 'StoredProcedure' } }, @{N = "SubType"; E = { '' } })
+                    $functions = @($db.UserDefinedFunctions | Where-Object { $_.IsEncrypted -eq $true } | Select-Object Name, Schema, @{N = "ObjectType"; E = { "UserDefinedFunction" } }, @{N = "SubType"; E = { $_.FunctionType.ToString().Trim() } })
+                    $views = @($db.Views | Where-Object { $_.IsEncrypted -eq $true } | Select-Object Name, Schema, @{N = "ObjectType"; E = { 'View' } }, @{N = "SubType"; E = { '' } })
+                    $triggers = @($triggers | Where-Object { $_.IsEncrypted -eq $true } | Select-Object Name, $triggerSchema, Parent, @{N = "ObjectType"; E = { 'Trigger' } }, @{N = "SubType"; E = { '' } })
                 }
-
-                <# Get all the objects
-                $storedProcedures = @($db.StoredProcedures | Where-Object {$_.Name -in $ObjectName -and $_.IsEncrypted -eq $true} | Select-Object Name, Schema, @{N = "ObjectType"; E = {'StoredProcedure'}}, @{N = "SubType"; E = {''}})
-                $functions = @($db.UserDefinedFunctions | Where-Object {$_.Name -in $ObjectName -and $_.IsEncrypted -eq $true} | Select-Object Name, Schema, @{N = "ObjectType"; E = {"UserDefinedFunction"}}, @{N = "SubType"; E = {$_.FunctionType.ToString().Trim()}})
-                $views = @($db.Views | Where-Object {$_.Name -in $ObjectName -and $_.IsEncrypted -eq $true} | Select-Object Name, Schema, @{N = "ObjectType"; E = {'View'}}, @{N = "SubType"; E = {''}})
-                #>
 
                 # Check if there are any objects
                 if ($storedProcedures.Count -ge 1) {
@@ -211,12 +227,14 @@ function Invoke-DbaDbDecryptObject {
                 if ($views.Count -ge 1) {
                     $objectCollection += $views
                 }
-
+                if ($triggers.Count -ge 1) {
+                    $objectCollection += $triggers
+                }
                 # Loop through all the objects
                 foreach ($object in $objectCollection) {
 
-                    # Setup the query to get the secret
-                    $querySecret = "SELECT imageval AS Value FROM sys.sysobjvalues WHERE objid = OBJECT_ID('$($object.Name)')"
+                    # Setup the query to get the secret. Include the schema name to find the object. Exclude null values in sys.sysobjvalues for triggers.
+                    $querySecret = "SELECT imageval AS Value FROM sys.sysobjvalues WHERE objid = OBJECT_ID('$($object.Schema).$($object.Name)') AND imageval IS NOT NULL"
 
                     # Get the result of the secret query
                     try {
@@ -232,24 +250,27 @@ function Invoke-DbaDbDecryptObject {
                         switch ($object.ObjectType) {
 
                             'StoredProcedure' {
-                                $queryKnownPlain = (" " * $secret.Value.Length) + "ALTER PROCEDURE $($object.Schema).$($object.Name) WITH ENCRYPTION AS RETURN 0;"
+                                $queryKnownPlain = (" " * $secret.Value.Length) + "ALTER PROCEDURE [$($object.Schema)].[$($object.Name)] WITH ENCRYPTION AS RETURN 0;"
                             }
                             'UserDefinedFunction' {
 
                                 switch ($object.SubType) {
                                     'Inline' {
-                                        $queryKnownPlain = (" " * $secret.value.length) + "ALTER FUNCTION $($object.Schema).$($object.Name)() RETURNS TABLE WITH ENCRYPTION AS BEGIN RETURN SELECT 0 i END;"
+                                        $queryKnownPlain = (" " * $secret.value.length) + "ALTER FUNCTION [$($object.Schema)].[$($object.Name)]() RETURNS TABLE WITH ENCRYPTION AS RETURN SELECT 0 i;"
                                     }
                                     'Scalar' {
-                                        $queryKnownPlain = (" " * $secret.value.length) + "ALTER FUNCTION $($object.Schema).$($object.Name)() RETURNS INT WITH ENCRYPTION AS BEGIN RETURN 0 END;"
+                                        $queryKnownPlain = (" " * $secret.value.length) + "ALTER FUNCTION [$($object.Schema)].[$($object.Name)]() RETURNS INT WITH ENCRYPTION AS BEGIN RETURN 0 END;"
                                     }
                                     'Table' {
-                                        $queryKnownPlain = (" " * $secret.value.length) + "ALTER FUNCTION $($object.Schema).$($object.Name)() RETURNS @r TABLE(i INT) WITH ENCRYPTION AS BEGIN RETURN END;"
+                                        $queryKnownPlain = (" " * $secret.value.length) + "ALTER FUNCTION [$($object.Schema)].[$($object.Name)]() RETURNS @r TABLE(i INT) WITH ENCRYPTION AS BEGIN RETURN END;"
                                     }
                                 }
                             }
                             'View' {
-                                $queryKnownPlain = (" " * $secret.Value.Length) + "ALTER VIEW $($object.Schema).$($object.Name) WITH ENCRYPTION AS SELECT NULL AS [Value];"
+                                $queryKnownPlain = (" " * $secret.Value.Length) + "ALTER VIEW [$($object.Schema)].[$($object.Name)] WITH ENCRYPTION AS SELECT NULL AS [Value];"
+                            }
+                            'Trigger' {
+                                $queryKnownPlain = (" " * $secret.Value.Length) + "ALTER TRIGGER [$($object.Schema)].[$($object.Name)] ON $($object.Parent) WITH ENCRYPTION AFTER INSERT AS RAISERROR (''Invoke-DbaDbDecryptObject'', 16, 10);"
                             }
                         }
 
@@ -265,12 +286,14 @@ function Invoke-DbaDbDecryptObject {
                         }
 
                         # Setup the query to change the object in SQL Server and roll it back getting the encrypted version
+                        # Exclude null values in sys.sysobjvalues for triggers and include the full schema and object name.
                         $queryKnownSecret = "
                             BEGIN TRANSACTION;
                                 EXEC ('$queryKnownPlain');
                                 SELECT imageval AS Value
                                 FROM sys.sysobjvalues
-                                WHERE objid = OBJECT_ID('$($object.Name)');
+                                WHERE objid = OBJECT_ID('$($object.Schema).$($object.Name)')
+                                AND imageval IS NOT NULL;
                             ROLLBACK;
                         "
 
@@ -285,6 +308,7 @@ function Invoke-DbaDbDecryptObject {
                         $result = Invoke-DecryptData -Secret $secret.value -KnownPlain $knownPlain -KnownSecret $knownSecret.value
 
                         # Check if the results need to be exported
+                        $filePath = $null
                         if ($ExportDestination) {
                             # make up the file name
                             $filename = "$($object.Schema).$($object.Name).sql"
@@ -320,7 +344,7 @@ function Invoke-DbaDbDecryptObject {
 
                         # Add the results to the custom object
                         [PSCustomObject]@{
-                            ComputerName = $server.ComputerName
+                            ComputerName = $instance.ComputerName
                             InstanceName = $server.ServiceName
                             SqlInstance  = $server.DomainInstanceName
                             Database     = $db.Name
@@ -329,21 +353,14 @@ function Invoke-DbaDbDecryptObject {
                             Name         = $object.Name
                             FullName     = "$($object.Schema).$($object.Name)"
                             Script       = $result
+                            OutputFile   = $filePath
                         }
-
-                    } # end if secret
-
-                } # end for each object
-
-            } # end for each database
-
-        } # end for each instance
-
-    } # process
-
+                    }
+                }
+            }
+        }
+    }
     end {
-        if (Test-FunctionInterrupt) { return }
-
         Write-Message -Message "Finished decrypting data" -Level Verbose
     }
 }

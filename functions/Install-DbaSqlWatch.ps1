@@ -11,7 +11,11 @@ function Install-DbaSqlWatch {
         SQL Server name or SMO object representing the SQL Server to connect to.
 
     .PARAMETER SqlCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Database
         Specifies the database to install SqlWatch into. Defaults to SQLWATCH.
@@ -38,11 +42,14 @@ function Install-DbaSqlWatch {
         Using this switch turns this "nice by default" feature off and enables you to catch exceptions with your own try/catch.
 
     .NOTES
-        Tags: SqlWatch
+        Tags: Community, SqlWatch
         Author: Ken K (github.com/koglerk)
+
         Website: https://dbatools.io
         Copyright: (c) 2018 by dbatools, licensed under MIT
         License: MIT https://opensource.org/licenses/MIT
+
+        https://sqlwatch.io
 
     .LINK
         https://dbatools.io/Install-DbaSqlWatch
@@ -85,6 +92,8 @@ function Install-DbaSqlWatch {
         [switch]$EnableException
     )
     begin {
+        if ($Force) { $ConfirmPreference = 'none' }
+
         $stepCounter = 0
 
         $DbatoolsData = Get-DbatoolsConfigValue -FullName "Path.DbatoolsData"
@@ -153,20 +162,11 @@ function Install-DbaSqlWatch {
             $LocalCacheFolder = Split-Path $LocallyCachedZip -Parent
 
             Write-Message -Level Verbose "Extracting $LocallyCachedZip to $LocalCacheFolder"
-            if (Get-Command -ErrorAction SilentlyContinue -Name "Expand-Archive") {
-                try {
-                    Expand-Archive -Path $LocallyCachedZip -DestinationPath $LocalCacheFolder -Force
-                } catch {
-                    Stop-Function -Message "Unable to extract $LocallyCachedZip. Archive may not be valid." -ErrorRecord $_
-                    return
-                }
-            } else {
-                # Keep it backwards compatible
-                $shell = New-Object -ComObject Shell.Application
-                $zipPackage = $shell.NameSpace($LocallyCachedZip)
-                $destinationFolder = $shell.NameSpace($LocalCacheFolder)
-                Get-ChildItem "$LocalCacheFolder\SqlWatch.zip" | Remove-Item
-                $destinationFolder.CopyHere($zipPackage.Items())
+            try {
+                Expand-Archive -Path $LocallyCachedZip -DestinationPath $LocalCacheFolder -Force
+            } catch {
+                Stop-Function -Message "Unable to extract $LocallyCachedZip. Archive may not be valid." -ErrorRecord $_
+                return
             }
 
             Write-Message -Level VeryVerbose "Deleting $LocallyCachedZip"
@@ -182,15 +182,16 @@ function Install-DbaSqlWatch {
             return
         }
 
+        $totalSteps = $stepCounter + $SqlInstance.Count * 2
         foreach ($instance in $SqlInstance) {
             if ($PSCmdlet.ShouldProcess($instance, "Installing SqlWatch on $Database")) {
                 try {
-                    $server = Connect-SqlInstance -SqlInstance $instance -SqlCredential $sqlcredential
+                    $server = Connect-SqlInstance -SqlInstance $instance -SqlCredential $SqlCredential
                 } catch {
                     Stop-Function -Message "Failure." -Category ConnectionError -ErrorRecord $_ -Target $instance -Continue
                 }
 
-                Write-ProgressHelper -StepNumber ($stepCounter++) -Message "Starting installing/updating SqlWatch in $database on $instance"
+                Write-ProgressHelper -StepNumber ($stepCounter++) -Message "Starting installing/updating SqlWatch in $database on $instance" -TotalSteps $totalSteps
 
 
                 try {
@@ -200,7 +201,7 @@ function Install-DbaSqlWatch {
                         RegisterDataTierApplication = $true
                     }
 
-                    Write-ProgressHelper -StepNumber ($stepCounter++) -Message "Publishing SqlWatch dacpac to $database on $instance"
+                    Write-ProgressHelper -StepNumber ($stepCounter++) -Message "Publishing SqlWatch dacpac to $database on $instance" -TotalSteps $totalSteps
                     $DacProfile = New-DbaDacProfile -SqlInstance $server -Database $Database -Path $LocalCacheFolder -PublishOptions $PublishOptions | Select-Object -ExpandProperty FileName
                     $PublishResults = Publish-DbaDacPackage -SqlInstance $server -Database $Database -Path $DacPacPath -PublishXml $DacProfile
 

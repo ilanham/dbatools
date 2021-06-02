@@ -4,13 +4,18 @@ function Disable-DbaTraceFlag {
         Disable a Global Trace Flag that is currently running
 
     .DESCRIPTION
-        The function will disable a Trace Flag that is currently running globally on the SQL Server instance(s) listed
+        The function will disable a Trace Flag that is currently running globally on the SQL Server instance(s) listed.
+        These are not persisted after a restart, use Set-DbaStartupParameter to set them to persist after restarts.
 
     .PARAMETER SqlInstance
         The target SQL Server instance or instances.
 
     .PARAMETER SqlCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER TraceFlag
         Trace flag number to enable globally

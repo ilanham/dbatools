@@ -4,7 +4,7 @@ function Convert-DbaTimelineStatusColor {
             Converts literal string status to a html color
 
         .DESCRIPTION
-            This function acceptes Agnet Job status as literal string input and covnerts to html color.
+            This function acceptes Agent Job status as literal string input and covnerts to html color.
             This is internal function, part of ConvertTo-DbaTimeline
 
         .PARAMETER Status
@@ -44,12 +44,12 @@ function Convert-DbaTimelineStatusColor {
         $Status
     )
     $out = switch ($Status) {
-        "Failed" {"#FF3D3D"}
-        "Succeeded" {"#36B300"}
-        "Retry" {"#FFFF00"}
-        "Canceled" {"#C2C2C2"}
-        "In Progress" {"#00CCFF"}
-        default {"#FF00CC"}
+        "Failed" { "#FF3D3D" }
+        "Succeeded" { "#36B300" }
+        "Retry" { "#FFFF00" }
+        "Canceled" { "#C2C2C2" }
+        "In Progress" { "#00CCFF" }
+        default { "#FF00CC" }
     }
     return $out
 }

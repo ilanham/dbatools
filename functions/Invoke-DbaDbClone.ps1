@@ -18,7 +18,11 @@ function Invoke-DbaDbClone {
         The target SQL Server instance or instances.
 
     .PARAMETER SqlCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Database
         The database to clone - this list is auto-populated from the server.
@@ -145,10 +149,10 @@ function Invoke-DbaDbClone {
             }
         }
 
-        $sql2012min = [version]"11.0.7001.0" # SQL 2012 SP4
-        $sql2014min = [version]"12.0.5000.0" # SQL 2014 SP2
+        $sql2012min = [version]"11.0.7001" # SQL 2012 SP4
+        $sql2014min = [version]"12.0.5000" # SQL 2014 SP2
         $sql2014CuMin = [version]"12.0.5538" # SQL 2014 SP2 + CU3
-        $sql2016min = [version]"13.0.4001.0" # SQL 2016 SP1
+        $sql2016min = [version]"13.0.4001" # SQL 2016 SP1
     }
     process {
         if (Test-FunctionInterrupt) { return }

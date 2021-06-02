@@ -10,7 +10,11 @@ function Get-DbaRegServerGroup {
         The target SQL Server instance or instances.
 
     .PARAMETER SqlCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Group
         Specifies one or more groups to include from SQL Server Central Management Server.
@@ -62,7 +66,7 @@ function Get-DbaRegServerGroup {
     #>
     [CmdletBinding()]
     param (
-        [parameter(Mandatory, ValueFromPipeline)]
+        [parameter(ValueFromPipeline)]
         [DbaInstanceParameter[]]$SqlInstance,
         [PSCredential]$SqlCredential,
         [object[]]$Group,
@@ -70,17 +74,24 @@ function Get-DbaRegServerGroup {
         [int[]]$Id,
         [switch]$EnableException
     )
+    begin {
+        $serverstores = $groups = @()
+    }
     process {
         foreach ($instance in $SqlInstance) {
             try {
-                $serverstore = Get-DbaRegServerStore -SqlInstance $instance -SqlCredential $SqlCredential -EnableException
+                $serverstores += Get-DbaRegServerStore -SqlInstance $instance -SqlCredential $SqlCredential -EnableException
             } catch {
                 Stop-Function -Message "Cannot access Central Management Server '$instance'" -ErrorRecord $_ -Continue
             }
+        }
 
-            $groups = @()
+        if (-not $SqlInstance) {
+            $serverstores += Get-DbaRegServerStore
+        }
 
-            if ($group) {
+        foreach ($serverstore in $serverstores) {
+            if ($Group) {
                 foreach ($currentgroup in $Group) {
                     Write-Message -Level Verbose -Message "Processing $currentgroup"
                     if ($currentgroup -is [Microsoft.SqlServer.Management.RegisteredServers.ServerGroup]) {
@@ -129,7 +140,7 @@ function Get-DbaRegServerGroup {
             }
 
             if ($ExcludeGroup) {
-                $excluded = Get-DbaRegServer -SqlInstance $serverstore.ParentServer -Group $ExcludeGroup
+                $excluded = Get-DbaRegServerGroup -SqlInstance $serverstore.ParentServer -SqlCredential $SqlCredential -Group $ExcludeGroup
                 Write-Message -Level Verbose -Message "Excluding $ExcludeGroup"
                 $groups = $groups | Where-Object { $_.Urn.Value -notin $excluded.Urn.Value }
             }
@@ -137,19 +148,26 @@ function Get-DbaRegServerGroup {
             if ($Id) {
                 Write-Message -Level Verbose -Message "Filtering for id $Id. Id 1 = default."
                 if ($Id -eq 1) {
-                    $groups = $serverstore.DatabaseEngineServerGroup | Where-Object Id -in $Id
+                    $groups = $serverstore.DatabaseEngineServerGroup
                 } else {
-                    $groups = $serverstore.DatabaseEngineServerGroup.GetDescendantRegisteredServers().Parent | Where-Object Id -in $Id
+                    $groups = $serverstore.DatabaseEngineServerGroup.GetDescendantRegisteredServers().Parent | Where-Object Id -In $Id
                 }
             }
-            $serverstore.ServerConnection.Disconnect()
-            foreach ($groupobject in $groups) {
-                Add-Member -Force -InputObject $groupobject -MemberType NoteProperty -Name ComputerName -value $serverstore.ComputerName
-                Add-Member -Force -InputObject $groupobject -MemberType NoteProperty -Name InstanceName -value $serverstore.InstanceName
-                Add-Member -Force -InputObject $groupobject -MemberType NoteProperty -Name SqlInstance -value $serverstore.SqlInstance
-                Add-Member -Force -InputObject $groupobject -MemberType NoteProperty -Name ParentServer -value $serverstore.ParentServer
+            if ($serverstore.ServerConnection) {
+                $serverstore.ServerConnection.Disconnect()
+            }
 
-                Select-DefaultView -InputObject $groupobject -Property ComputerName, InstanceName, SqlInstance, Name, DisplayName, Description, ServerGroups, RegisteredServers
+            foreach ($groupobject in $groups) {
+                Add-Member -Force -InputObject $groupobject -MemberType NoteProperty -Name ComputerName -Value $serverstore.ComputerName
+                Add-Member -Force -InputObject $groupobject -MemberType NoteProperty -Name InstanceName -Value $serverstore.InstanceName
+                Add-Member -Force -InputObject $groupobject -MemberType NoteProperty -Name SqlInstance -Value $serverstore.SqlInstance
+                Add-Member -Force -InputObject $groupobject -MemberType NoteProperty -Name ParentServer -Value $serverstore.ParentServer
+
+                if ($groupobject.ComputerName) {
+                    Select-DefaultView -InputObject $groupobject -Property ComputerName, InstanceName, SqlInstance, Name, DisplayName, Description, ServerGroups, RegisteredServers
+                } else {
+                    Select-DefaultView -InputObject $groupobject -Property Name, DisplayName, Description, ServerGroups, RegisteredServers
+                }
             }
         }
     }

@@ -10,7 +10,11 @@ function Get-DbaDbRoleMember {
         The target SQL Server instance or instances. This can be a collection and receive pipeline input to allow the function to be executed against multiple SQL Server instances.
 
     .PARAMETER SqlCredential
-        Login to the target instance using alternate Windows or SQL Login Authentication. Accepts credential objects (Get-Credential).
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Database
         The database(s) to process. This list is auto-populated from the server. If unspecified, all databases will be processed.
@@ -117,11 +121,11 @@ function Get-DbaDbRoleMember {
             switch ($inputType) {
                 'Sqlcollaborative.Dbatools.Parameter.DbaInstanceParameter' {
                     Write-Message -Level Verbose -Message "Processing DbaInstanceParameter through InputObject"
-                    $dbRoles = Get-DbaDBRole -SqlInstance $input -SqlCredential $sqlcredential -Database $Database -ExcludeDatabase $ExcludeDatabase -Role $Role -ExcludeRole $ExcludeRole -ExcludeFixedRole:$ExcludeFixedRole
+                    $dbRoles = Get-DbaDBRole -SqlInstance $input -SqlCredential $SqlCredential -Database $Database -ExcludeDatabase $ExcludeDatabase -Role $Role -ExcludeRole $ExcludeRole -ExcludeFixedRole:$ExcludeFixedRole
                 }
                 'Microsoft.SqlServer.Management.Smo.Server' {
                     Write-Message -Level Verbose -Message "Processing Server through InputObject"
-                    $dbRoles = Get-DbaDBRole -SqlInstance $input -SqlCredential $sqlcredential -Database $Database -ExcludeDatabase $ExcludeDatabase -Role $Role -ExcludeRole $ExcludeRole -ExcludeFixedRole:$ExcludeFixedRole
+                    $dbRoles = Get-DbaDBRole -SqlInstance $input -SqlCredential $SqlCredential -Database $Database -ExcludeDatabase $ExcludeDatabase -Role $Role -ExcludeRole $ExcludeRole -ExcludeFixedRole:$ExcludeFixedRole
                 }
                 'Microsoft.SqlServer.Management.Smo.Database' {
                     Write-Message -Level Verbose -Message "Processing Database through InputObject"
@@ -150,15 +154,17 @@ function Get-DbaDbRoleMember {
                     }
 
                     if ($user) {
-                        Add-Member -Force -InputObject $user -MemberType NoteProperty -Name ComputerName -Value $server.ComputerName
-                        Add-Member -Force -InputObject $user -MemberType NoteProperty -Name InstanceName -Value $server.ServiceName
-                        Add-Member -Force -InputObject $user -MemberType NoteProperty -Name SqlInstance -Value $server.DomainInstanceName
-                        Add-Member -Force -InputObject $user -MemberType NoteProperty -Name Database -Value $db.Name
-                        Add-Member -Force -InputObject $user -MemberType NoteProperty -Name Role -Value $dbRole.Name
-                        Add-Member -Force -InputObject $user -MemberType NoteProperty -Name UserName -Value $user.Name
-
-                        # Select object because Select-DefaultView causes strange behaviors when assigned to a variable (??)
-                        Select-Object -InputObject $user -Property 'ComputerName', 'InstanceName', 'SqlInstance', 'Database', 'Role', 'UserName', 'Login', 'IsSystemObject', 'LoginType'
+                        [PSCustomObject]@{
+                            ComputerName = $server.ComputerName
+                            InstanceName = $server.ServiceName
+                            SqlInstance  = $server.DomainInstanceName
+                            Database     = $db.Name
+                            Role         = $dbRole.Name
+                            UserName     = $user.Name
+                            Login        = $user.Login
+                            SMORole      = $dbRole
+                            SMOUser      = $user
+                        }
                     }
                 }
             }

@@ -10,7 +10,11 @@ function Mount-DbaDatabase {
         The target SQL Server instance or instances.
 
     .PARAMETER SqlCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Database
         The database(s) to attach.
@@ -83,7 +87,7 @@ function Mount-DbaDatabase {
     process {
         foreach ($instance in $SqlInstance) {
             try {
-                $server = Connect-SqlInstance -SqlInstance $instance -SqlCredential $sqlcredential
+                $server = Connect-SqlInstance -SqlInstance $instance -SqlCredential $SqlCredential
             } catch {
                 Stop-Function -Message "Error occurred while establishing connection to $instance" -Category ConnectionError -ErrorRecord $_ -Target $instance -Continue
             }
@@ -102,12 +106,8 @@ function Mount-DbaDatabase {
                     Stop-Function -Message "$db is already attached to $server." -Target $db -Continue
                 }
 
-                if ($server.Databases[$db].IsSystemObject) {
-                    Stop-Function -Message "$db is a system database and cannot be attached using this method." -Target $db -Continue
-                }
-
                 if (-Not (Test-Bound -Parameter FileStructure)) {
-                    $backuphistory = Get-DbaBackupHistory -SqlInstance $server -Database $db -Type Full | Sort-Object End -Descending | Select-Object -First 1
+                    $backuphistory = Get-DbaDbBackupHistory -SqlInstance $server -Database $db -Type Full | Sort-Object End -Descending | Select-Object -First 1
 
                     if (-not $backuphistory) {
                         $message = "Could not enumerate backup history to automatically build FileStructure. Rerun the command and provide the filestructure parameter."
@@ -119,7 +119,7 @@ function Mount-DbaDatabase {
 
                     $FileStructure = New-Object System.Collections.Specialized.StringCollection
                     foreach ($file in $filepaths) {
-                        $exists = Test-Dbapath -SqlInstance $server -Path $file
+                        $exists = Test-DbaPath -SqlInstance $server -Path $file
                         if (-not $exists) {
                             $message = "Could not find the files to build the FileStructure. Rerun the command and provide the FileStructure parameter."
                             Stop-Function -Message $message -Target $file -Continue

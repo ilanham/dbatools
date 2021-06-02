@@ -15,7 +15,7 @@ function Invoke-DbatoolsFormatter {
         Using this switch turns this "nice by default" feature off and enables you to catch exceptions with your own try/catch.
 
     .NOTES
-        Tags: Formatting
+        Tags: Module, Support
         Author: Simone Bizzotto
 
         Website: https://dbatools.io
@@ -29,7 +29,6 @@ function Invoke-DbatoolsFormatter {
         PS C:\> Invoke-DbatoolsFormatter -Path C:\dbatools\functions\Get-DbaDatabase.ps1
 
         Reformats C:\dbatools\functions\Get-DbaDatabase.ps1 to dbatools' standards
-
     #>
     [CmdletBinding()]
     param (
@@ -38,13 +37,30 @@ function Invoke-DbatoolsFormatter {
         [switch]$EnableException
     )
     begin {
-        $HasInvokeFormatter = $null -ne (Get-Command Invoke-Formatter -ErrorAction SilentlyContinue).Version
+        $invokeFormatterVersion = (Get-Command Invoke-Formatter -ErrorAction SilentlyContinue).Version
+        $HasInvokeFormatter = $null -ne $invokeFormatterVersion
+        $ScriptAnalyzerCorrectVersion = '1.18.2'
         if (!($HasInvokeFormatter)) {
-            Stop-Function -Message "You need a recent version of PSScriptAnalyzer installed"
+            Stop-Function -Message "You need PSScriptAnalyzer version $ScriptAnalyzerCorrectVersion installed"
+            Write-Message -Level Warning "     Install-Module -Name PSScriptAnalyzer -RequiredVersion '$ScriptAnalyzerCorrectVersion'"
+        } else {
+            if ($invokeFormatterVersion -ne $ScriptAnalyzerCorrectVersion) {
+                Remove-Module PSScriptAnalyzer
+                try {
+                    Import-Module PSScriptAnalyzer -RequiredVersion $ScriptAnalyzerCorrectVersion -ErrorAction Stop
+                } catch {
+                    Stop-Function -Message "Please install PSScriptAnalyzer $ScriptAnalyzerCorrectVersion"
+                    Write-Message -Level Warning "     Install-Module -Name PSScriptAnalyzer -RequiredVersion '$ScriptAnalyzerCorrectVersion'"
+                }
+            }
         }
-        $CBHRex = [regex]'(?smi)\s+<#[^#]*#>'
-        $CBHStartRex = [regex]'(?<spaces>[ ]+)<#'
-        $CBHEndRex = [regex]'(?<spaces>[ ]*)#>'
+        $CBHRex = [regex]'(?smi)\s+\<\#[^#]*\#\>'
+        $CBHStartRex = [regex]'(?<spaces>[ ]+)\<\#'
+        $CBHEndRex = [regex]'(?<spaces>[ ]*)\#\>'
+        $OSEOL = "`n"
+        if ($psVersionTable.Platform -ne 'Unix') {
+            $OSEOL = "`r`n"
+        }
     }
     process {
         if (Test-FunctionInterrupt) { return }
@@ -56,8 +72,18 @@ function Invoke-DbatoolsFormatter {
             }
 
             $content = Get-Content -Path $realPath -Raw -Encoding UTF8
+            if ($OSEOL -eq "`r`n") {
+                # See #5830, we are in Windows territory here
+                # Is the file containing at least one `r ?
+                $containsCR = ($content -split "`r").Length -gt 1
+                if (-not($containsCR)) {
+                    # If not, maybe even on Windows the user is using Unix-style endings, which are supported
+                    $OSEOL = "`n"
+                }
+            }
+
             #strip ending empty lines
-            $content = $content -replace "(?s)`r`n\s*$"
+            $content = $content -replace "(?s)$OSEOL\s*$"
             try {
                 $content = Invoke-Formatter -ScriptDefinition $content -Settings CodeFormattingOTBS -ErrorAction Stop
             } catch {
@@ -81,9 +107,9 @@ function Invoke-DbatoolsFormatter {
             $realContent = @()
             #trim whitespace lines
             foreach ($line in $content.Split("`n")) {
-                $realContent += $line.TrimEnd()
+                $realContent += $line.Replace("`t", "    ").TrimEnd()
             }
-            [System.IO.File]::WriteAllText($realPath, ($realContent -Join "`r`n"), $Utf8NoBomEncoding)
+            [System.IO.File]::WriteAllText($realPath, ($realContent -Join "$OSEOL"), $Utf8NoBomEncoding)
         }
     }
 }

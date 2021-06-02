@@ -10,7 +10,11 @@ function Remove-DbaDbSnapshot {
         The target SQL Server instance or instances
 
     .PARAMETER SqlCredential
-        Credential object used to connect to the SQL Server as a different user
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Database
         Removes snapshots for only this specific base db
@@ -78,7 +82,7 @@ function Remove-DbaDbSnapshot {
         Removes all snapshots associated with databases that have dumpsterfire in the name
 
     .EXAMPLE
-        PS C:\> Get-DbaDbSnapshot -SqlInstance sql2016 | Out-GridView -Passthru | Remove-DbaDbSnapshot
+        PS C:\> Get-DbaDbSnapshot -SqlInstance sql2016 | Out-GridView -PassThru | Remove-DbaDbSnapshot
 
         Allows the selection of snapshots on sql2016 to remove
 
@@ -93,7 +97,7 @@ function Remove-DbaDbSnapshot {
         Removes all database snapshots from sql2014 and prompts for each database
 
     #>
-    [CmdletBinding(SupportsShouldProcess)]
+    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = "High")]
     param (
         [DbaInstanceParameter[]]$SqlInstance,
         [PSCredential]$SqlCredential,
@@ -107,7 +111,9 @@ function Remove-DbaDbSnapshot {
         [switch]$EnableException
     )
     begin {
-        $defaultprops = 'ComputerName', 'InstanceName', 'SqlInstance', 'Database as Name', 'Status'
+        if ($Force) { $ConfirmPreference = 'none' }
+
+        $defaultProps = 'ComputerName', 'InstanceName', 'SqlInstance', 'Database as Name', 'Status'
     }
     process {
         if (!$Snapshot -and !$Database -and !$AllSnapshots -and $null -eq $InputObject -and !$ExcludeDatabase) {
@@ -134,10 +140,10 @@ function Remove-DbaDbSnapshot {
             }
 
             if ($Force) {
-                $db | Remove-DbaDatabase -Confirm:$false | Select-DefaultView -Property $defaultprops
+                $db | Remove-DbaDatabase -Confirm:$false | Select-DefaultView -Property $defaultProps
             } else {
                 try {
-                    if ($Pscmdlet.ShouldProcess("$db on $server", "Drop snapshot")) {
+                    if ($PsCmdlet.ShouldProcess("$db on $server", "Drop snapshot")) {
                         $db.Drop()
                         $server.Refresh()
 
@@ -147,7 +153,7 @@ function Remove-DbaDbSnapshot {
                             SqlInstance  = $server.DomainInstanceName
                             Database     = $db.name
                             Status       = "Dropped"
-                        } | Select-DefaultView -Property $defaultprops
+                        } | Select-DefaultView -Property $defaultProps
                     }
                 } catch {
                     Write-Message -Level Verbose -Message "Could not drop database $db on $server"
@@ -158,7 +164,7 @@ function Remove-DbaDbSnapshot {
                         SqlInstance  = $server.DomainInstanceName
                         Database     = $db.name
                         Status       = (Get-ErrorMessage -Record $_)
-                    } | Select-DefaultView -Property $defaultprops
+                    } | Select-DefaultView -Property $defaultProps
                 }
             }
         }

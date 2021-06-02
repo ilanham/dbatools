@@ -10,7 +10,11 @@ function Invoke-DbaDbDataGenerator {
         The target SQL Server instance or instances.
 
     .PARAMETER SqlCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Database
         Databases to process through
@@ -101,6 +105,8 @@ function Invoke-DbaDbDataGenerator {
     )
 
     begin {
+        if ($Force) { $ConfirmPreference = 'none' }
+
         # Create the faker objects
         try {
             $faker = New-Object Bogus.Faker($Locale)
@@ -123,7 +129,15 @@ function Invoke-DbaDbDataGenerator {
         } else {
             # Check if the destination is accessible
             if (-not (Test-Path -Path $FilePath)) {
-                Stop-Function -Message "Could not find masking config file $FilePath" -Target $FilePath
+                Stop-Function -Message "Could not find data generation config file $FilePath" -Target $FilePath
+                return
+            }
+
+            # Test the configuration
+            try {
+                Test-DbaDbDataGeneratorConfig -FilePath $FilePath -EnableException
+            } catch {
+                Stop-Function -Message "Errors found testing the configuration file. `n$_" -ErrorRecord $_ -Target $FilePath
                 return
             }
 
@@ -351,36 +365,11 @@ function Invoke-DbaDbDataGenerator {
                                     }
                                     $columnValue = $nextIdentity
                                 } else {
-                                    # make sure max is good
-                                    if ($MaxValue) {
-                                        if ($columnobject.MaxValue -le $MaxValue) {
-                                            $max = $columnobject.MaxValue
-                                        } else {
-                                            $max = $MaxValue
-                                        }
-                                    } else {
-                                        $max = $columnobject.MaxValue
-                                    }
-
-                                    if (-not $columnobject.MaxValue -and -not (Test-Bound -ParameterName MaxValue)) {
-                                        $max = 10
-                                    }
 
                                     if ($columnobject.CharacterString) {
                                         $charstring = $columnobject.CharacterString
                                     } else {
                                         $charstring = $CharacterString
-                                    }
-
-                                    # make sure min is good
-                                    if ($columnobject.MinValue) {
-                                        $min = $columnobject.MinValue
-                                    } else {
-                                        if ($columnobject.CharacterString) {
-                                            $min = 1
-                                        } else {
-                                            $min = 0
-                                        }
                                     }
 
                                     if (($columnobject.MinValue -or $columnobject.MaxValue) -and ($columnobject.ColumnType -match 'date')) {

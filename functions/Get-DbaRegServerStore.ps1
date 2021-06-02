@@ -11,7 +11,11 @@ function Get-DbaRegServerStore {
         to be executed against multiple SQL Server instances.
 
     .PARAMETER SqlCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER EnableException
         By default, when something goes wrong we try to catch it, interpret it and give you a friendly warning message.
@@ -42,7 +46,7 @@ function Get-DbaRegServerStore {
     #>
     [CmdletBinding()]
     param (
-        [parameter(Mandatory, ValueFromPipeline)]
+        [parameter(ValueFromPipeline)]
         [DbaInstanceParameter[]]$SqlInstance,
         [PSCredential]$SqlCredential,
         [switch]$EnableException
@@ -66,6 +70,18 @@ function Get-DbaRegServerStore {
             Add-Member -Force -InputObject $store -MemberType NoteProperty -Name SqlInstance -value $server.DomainInstanceName
             Add-Member -Force -InputObject $store -MemberType NoteProperty -Name ParentServer -value $server
             Select-DefaultView -InputObject $store -ExcludeProperty ServerConnection, DomainInstanceName, DomainName, Urn, Properties, Metadata, Parent, ConnectionContext, PropertyMetadataChanged, PropertyChanged, ParentServer
+        }
+
+        # Magic courtesy of Mathias Jessen and David Shifflet
+        if (-not $PSBoundParameters.SqlInstance) {
+            $file = [Microsoft.SqlServer.Management.RegisteredServers.RegisteredServersStore]::LocalFileStore.DomainInstanceName
+            if ($file) {
+                if ((Test-Path -Path $file)) {
+                    $class = [Microsoft.SqlServer.Management.RegisteredServers.RegisteredServersStore]
+                    $initMethod = $class.GetMethod('InitChildObjects', [Reflection.BindingFlags]'Static,NonPublic')
+                    $initMethod.Invoke($null, @($file))
+                }
+            }
         }
     }
 }

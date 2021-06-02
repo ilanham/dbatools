@@ -12,7 +12,11 @@ function Export-DbaLinkedServer {
         Source SQL Server. You must have sysadmin access and server version must be SQL Server version 2005 or higher.
 
     .PARAMETER SqlCredential
-        Login to the target instance using alternative linked servers. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Credential
         Login to the target OS using alternative linked servers. Accepts credential objects (Get-Credential)
@@ -48,6 +52,9 @@ function Export-DbaLinkedServer {
         Copyright: (c) 2018 by dbatools, licensed under MIT
         License: MIT https://opensource.org/licenses/MIT
 
+    .LINK
+        https://dbatools.io/Export-DbaLinkedServer
+
     .EXAMPLE
         PS C:\> Export-DbaLinkedServer -SqlInstance sql2017 -Path C:\temp\ls.sql
 
@@ -81,7 +88,7 @@ function Export-DbaLinkedServer {
         if (Test-FunctionInterrupt) { return }
         foreach ($instance in $SqlInstance) {
             try {
-                $server = Connect-SqlInstance -SqlInstance $instance -SqlCredential $sqlcredential -MinimumVersion 9
+                $server = Connect-SqlInstance -SqlInstance $instance -SqlCredential $SqlCredential -MinimumVersion 9
                 $InputObject += $server.LinkedServers
             } catch {
                 Stop-Function -Message "Error occurred while establishing connection to $instance" -Category ConnectionError -ErrorRecord $_ -Target $instance -Continue
@@ -96,7 +103,7 @@ function Export-DbaLinkedServer {
                 continue
             }
 
-            if (!(Test-SqlSa -SqlInstance $instance -SqlCredential $sqlcredential)) {
+            if (!(Test-SqlSa -SqlInstance $instance -SqlCredential $SqlCredential)) {
                 Stop-Function -Message "Not a sysadmin on $instance. Quitting." -Target $instance -Continue
             }
 
@@ -129,8 +136,10 @@ function Export-DbaLinkedServer {
                     if ($currentls.Password) {
                         $tempsql = $ls.Script()
                         foreach ($map in $currentls) {
-                            $rmtuser = $map.Identity.Replace("'", "''")
-                            $password = $map.Password.Replace("'", "''")
+                            if ($map.Identity -isnot [dbnull]) {
+                                $rmtuser = $map.Identity.Replace("'", "''")
+                                $password = $map.Password.Replace("'", "''")
+                            }
                             $tempsql = $tempsql.Replace(' /* For security reasons the linked server remote logins password is changed with ######## */', '')
                             $tempsql = $tempsql.Replace("rmtuser=N'$rmtuser',@rmtpassword='########'", "rmtuser=N'$rmtuser',@rmtpassword='$password'")
                         }

@@ -55,7 +55,6 @@ function Invoke-DbatoolsRenameHelper {
 
         Shows what would happen if the command would run. If the command would run and there were matches,
         the resulting changes would be written to disk as Ascii encoded.
-
     #>
     [CmdletBinding(SupportsShouldProcess)]
     param (
@@ -82,15 +81,20 @@ function Invoke-DbatoolsRenameHelper {
             NoSystemObjects    = 'ExcludeSystemObjects'
             NoSystemSpid       = 'ExcludeSystemSpids'
             UseLastBackups     = 'UseLastBackup'
+            PasswordExpiration = 'PasswordExpirationEnabled'
+            PasswordPolicy     = 'PasswordPolicyEnforced'
+            ServerInstance     = 'SqlInstance'
         }
 
         $commandrenames = @{
+            'Find-DbaDuplicateIndex'            = 'Find-DbaDbDuplicateIndex'
+            'Find-DbaDisabledIndex'             = 'Find-DbaDbDisabledIndex'
             'Add-DbaRegisteredServer'           = 'Add-DbaRegServer'
             'Add-DbaRegisteredServerGroup'      = 'Add-DbaRegServerGroup'
             'Backup-DbaDatabaseCertificate'     = 'Backup-DbaDbCertificate'
             'Backup-DbaDatabaseMasterKey'       = 'Backup-DbaDbMasterKey'
             'Clear-DbaSqlConnectionPool'        = 'Clear-DbaConnectionPool'
-            'Connect-DbaInstance'               = 'Connect-DbaInstance'
+            'Connect-DbaServer'                 = 'Connect-DbaInstance'
             'Copy-DbaAgentCategory'             = 'Copy-DbaAgentJobCategory'
             'Copy-DbaAgentProxyAccount'         = 'Copy-DbaAgentProxy'
             'Copy-DbaAgentSharedSchedule'       = 'Copy-DbaAgentSchedule'
@@ -140,7 +144,7 @@ function Invoke-DbatoolsRenameHelper {
             'Export-SqlSpConfigure'             = 'Export-DbaSpConfigure'
             'Export-SqlUser'                    = 'Export-DbaUser'
             'Find-DbaDatabaseGrowthEvent'       = 'Find-DbaDbGrowthEvent'
-            'Find-SqlDuplicateIndex'            = 'Find-DbaDuplicateIndex'
+            'Find-SqlDuplicateIndex'            = 'Find-DbaDbDuplicateIndex'
             'Find-SqlUnusedIndex'               = 'Find-DbaDbUnusedIndex'
             'Get-DbaRegServerName'              = 'Get-DbaRegServer'
             'Get-DbaConfig'                     = 'Get-DbatoolsConfig'
@@ -231,6 +235,7 @@ function Invoke-DbatoolsRenameHelper {
             'Restore-DbaDatabaseSnapshot'       = 'Restore-DbaDbSnapshot'
             'Restore-HallengrenBackup'          = 'Restore-SqlBackupFromDirectory'
             'Set-DbaConfig'                     = 'Set-DbatoolsConfig'
+            'Get-DbaBackupHistory'              = 'Get-DbaDbBackupHistory'
             'Set-DbaDatabaseOwner'              = 'Set-DbaDbOwner'
             'Set-DbaDatabaseState'              = 'Set-DbaDbState'
             'Set-DbaDbQueryStoreOptions'        = 'Set-DbaDbQueryStoreOption'
@@ -252,6 +257,7 @@ function Invoke-DbatoolsRenameHelper {
             'Test-DbaDatabaseCollation'         = 'Test-DbaDbCollation'
             'Test-DbaDatabaseCompatibility'     = 'Test-DbaDbCompatibility'
             'Test-DbaDatabaseOwner'             = 'Test-DbaDbOwner'
+            'Test-DbaDbVirtualLogFile'          = 'Measure-DbaDbVirtualLogFile'
             'Test-DbaFullRecoveryModel'         = 'Test-DbaDbRecoveryModel'
             'Test-DbaJobOwner'                  = 'Test-DbaAgentJobOwner'
             'Test-DbaLogShippingStatus'         = 'Test-DbaDbLogShipStatus'
@@ -285,31 +291,41 @@ function Invoke-DbatoolsRenameHelper {
             'Remove-DbaCmsRegServer'            = 'Remove-DbaRegServer'
             'Remove-DbaCmsRegServerGroup'       = 'Remove-DbaRegServerGroup'
             'Copy-DbaServerAuditSpecification'  = 'Copy-DbaInstanceAuditSpecification'
-            'Copy-DbaInstanceAudit'             = 'Copy-DbaServerAudit'
-            'Copy-DbaServerRole'                = 'Copy-DbaInstanceRole'
+            'Copy-DbaServerAudit'               = 'Copy-DbaInstanceAudit'
             'Copy-DbaServerTrigger'             = 'Copy-DbaInstanceTrigger'
-            'Test-DbaServerName'                = 'Repair-DbaServerName'
+            'Test-DbaServerName'                = 'Test-DbaInstanceName'
             'Test-DbaInstanceName'              = 'Repair-DbaInstanceName'
             'Get-DbaServerTrigger'              = 'Get-DbaInstanceTrigger'
-            'Get-DbaServerAudit'                = 'Get-DbaServerAuditSpecification'
-            'Get-DbaInstanceAudit'              = 'Get-DbaInstanceAuditSpecification'
+            'Get-DbaServerAudit'                = 'Get-DbaInstanceAudit'
+            'Get-DbaServerAuditSpecification'   = 'Get-DbaInstanceAuditSpecification'
             'Get-DbaServerInstallDate'          = 'Get-DbaInstanceInstallDate'
-            'Get-DbaServerRole'                 = 'Get-DbaInstanceRole'
             'Show-DbaServerFileSystem'          = 'Show-DbaInstanceFileSystem'
             'Install-DbaWatchUpdate'            = 'Install-DbatoolsWatchUpdate'
             'Uninstall-DbaWatchUpdate'          = 'Uninstall-DbatoolsWatchUpdate'
         }
-
-        $allrenames = $commandrenames + $paramrenames
     }
     process {
         foreach ($fileobject in $InputObject) {
             $file = $fileobject.FullName
 
-            foreach ($name in $allrenames.GetEnumerator()) {
+            foreach ($name in $paramrenames.GetEnumerator()) {
                 if ((Select-String -Pattern $name.Key -Path $file)) {
                     if ($Pscmdlet.ShouldProcess($file, "Replacing $($name.Key) with $($name.Value)")) {
                         $content = (Get-Content -Path $file -Raw).Replace($name.Key, $name.Value).Trim()
+                        Set-Content -Path $file -Encoding $Encoding -Value $content
+                        [pscustomobject]@{
+                            Path         = $file
+                            Pattern      = $name.Key
+                            ReplacedWith = $name.Value
+                        }
+                    }
+                }
+            }
+
+            foreach ($name in $commandrenames.GetEnumerator()) {
+                if ((Select-String -Pattern "\b$($name.Key)\b" -Path $file)) {
+                    if ($Pscmdlet.ShouldProcess($file, "Replacing $($name.Key) with $($name.Value)")) {
+                        $content = ((Get-Content -Path $file -Raw) -Replace "\b$($name.Key)\b", $name.Value).Trim()
                         Set-Content -Path $file -Encoding $Encoding -Value $content
                         [pscustomobject]@{
                             Path         = $file

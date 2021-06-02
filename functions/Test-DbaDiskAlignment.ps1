@@ -4,7 +4,9 @@ function Test-DbaDiskAlignment {
         Verifies that your non-dynamic disks are aligned according to physical constraints.
 
     .DESCRIPTION
-        Returns $true or $false by default for one server. Returns Server name and IsBestPractice for more than one server.
+        Verifies that your non-dynamic disks are aligned according to physical constraints.
+
+        Returns one row per computer, partition and stripe size with.
 
         Please refer to your storage vendor best practices before following any advice below.
 
@@ -25,7 +27,11 @@ function Test-DbaDiskAlignment {
         $cred = Get-Credential, then pass $cred object to the -Credential parameter.
 
     .PARAMETER SQLCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER NoSqlCheck
         If this switch is enabled, the disk(s) will not be checked for SQL Server data or log files.
@@ -115,18 +121,24 @@ function Test-DbaDiskAlignment {
 
 
                 $disks = @()
-                $disks += $($partitions | ForEach-Object {
-                        Get-CimInstance -CimSession $CimSession -Query "ASSOCIATORS OF {Win32_DiskPartition.DeviceID=""$($_.DeviceID.Replace("\", "\\"))""} WHERE AssocClass = Win32_LogicalDiskToPartition" |
-                            Add-Member -Force -MemberType noteproperty -Name BlockSize -Value $_.BlockSize -PassThru |
-                            Add-Member -Force -MemberType noteproperty -Name BootPartition -Value $_.BootPartition -PassThru |
-                            Add-Member -Force -MemberType noteproperty -Name DiskIndex -Value $_.DiskIndex -PassThru |
-                            Add-Member -Force -MemberType noteproperty -Name Index -Value $_.Index -PassThru |
-                            Add-Member -Force -MemberType noteproperty -Name NumberOfBlocks -Value $_.NumberOfBlocks -PassThru |
-                            Add-Member -Force -MemberType noteproperty -Name StartingOffset -Value $_.StartingOffset -PassThru |
-                            Add-Member -Force -MemberType noteproperty -Name Type -Value $_.Type -PassThru
-                    } |
-                        Select-Object BlockSize, BootPartition, Description, DiskIndex, Index, Name, NumberOfBlocks, Size, StartingOffset, Type
-                )
+                foreach ($partition in $partitions) {
+                    $associators = Get-CimInstance -CimSession $CimSession -Query "ASSOCIATORS OF {Win32_DiskPartition.DeviceID=""$($partition.DeviceID.Replace("\", "\\"))""} WHERE AssocClass = Win32_LogicalDiskToPartition"
+                    foreach ($assoc in $associators) {
+                        $disks += [PSCustomObject]@{
+                            BlockSize      = $partition.BlockSize
+                            BootPartition  = $partition.BootPartition
+                            Description    = $partition.Description
+                            DiskIndex      = $partition.DiskIndex
+                            Index          = $partition.Index
+                            NumberOfBlocks = $partition.NumberOfBlocks
+                            StartingOffset = $partition.StartingOffset
+                            Type           = $partition.Type
+                            Name           = $assoc.Name
+                            Size           = $partition.Size
+                        }
+                    }
+                }
+
                 Write-Message -Level Verbose -Message "Gathered CIM information." -FunctionName $FunctionName
             } catch {
                 Stop-Function -Message "Can't connect to CIM on $ComputerName." -FunctionName $FunctionName -InnerErrorRecord $_
@@ -142,8 +154,8 @@ function Test-DbaDiskAlignment {
                     $instance = $service.DisplayName.Replace('SQL Server (', '')
                     $instance = $instance.TrimEnd(')')
 
-                    $instancename = $instance.Replace("MSSQLSERVER", "Default")
-                    Write-Message -Level Verbose -Message "Found instance $instancename" -FunctionName $FunctionName
+                    $instanceName = $instance.Replace("MSSQLSERVER", "Default")
+                    Write-Message -Level Verbose -Message "Found instance $instanceName" -FunctionName $FunctionName
                     if ($instance -eq 'MSSQLSERVER') {
                         $SqlInstances += $ComputerName
                     } else {
@@ -236,7 +248,7 @@ function Test-DbaDiskAlignment {
                     [PSCustomObject]@{
                         ComputerName            = $ogcomputer
                         Name                    = "$($partition.Name)"
-                        PartitonSize            = [dbasize]($($partition.Size / 1MB) * 1024 * 1024)
+                        PartitionSize           = [dbasize]($($partition.Size / 1MB) * 1024 * 1024)
                         PartitionType           = $partition.Type
                         TestingStripeSize       = [dbasize]($size * 1024)
                         OffsetModuluCalculation = [dbasize]($OffsetModuloKB * 1024)
@@ -292,7 +304,7 @@ function Test-DbaDiskAlignment {
             }
             #endregion Connecting to server via Cim
 
-            Write-Message -Level Verbose -Message "Getting Power Plan information from $Computer."
+            Write-Message -Level Verbose -Message "Getting Disk Alignment information from $Computer."
 
 
             try {

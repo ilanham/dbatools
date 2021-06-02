@@ -34,16 +34,32 @@ function Invoke-DbaDbLogShipping {
         You must have sysadmin access and server version must be SQL Server version 2000 or greater.
 
     .PARAMETER SourceSqlCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER SourceCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER DestinationSqlCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER DestinationCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Database
         Database to set up log shipping for.
@@ -385,199 +401,122 @@ function Invoke-DbaDbLogShipping {
         The script will show a message that the copy destination has not been supplied and asks if you want to use the default which would be the backup directory of the secondary server with the folder "logshipping" i.e. "D:\SQLBackup\Logshiping".
 
     #>
-    [CmdletBinding(DefaultParameterSetName = "Default", SupportsShouldProcess)]
+    [CmdletBinding(DefaultParameterSetName = "Default", SupportsShouldProcess, ConfirmImpact = "Medium")]
 
     param(
         [parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
         [Alias("SourceServerInstance", "SourceSqlServerSqlServer", "Source")]
-        [object]$SourceSqlInstance,
-
+        [DbaInstanceParameter]$SourceSqlInstance,
         [parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
         [Alias("DestinationServerInstance", "DestinationSqlServer", "Destination")]
-        [object[]]$DestinationSqlInstance,
-
+        [DbaInstanceParameter[]]$DestinationSqlInstance,
         [System.Management.Automation.PSCredential]
         $SourceSqlCredential,
-
         [System.Management.Automation.PSCredential]
         $SourceCredential,
-
         [System.Management.Automation.PSCredential]
         $DestinationSqlCredential,
-
         [System.Management.Automation.PSCredential]
         $DestinationCredential,
-
         [Parameter(Mandatory, ValueFromPipeline)]
         [object[]]$Database,
-
         [parameter(Mandatory)]
         [Alias("BackupNetworkPath")]
         [string]$SharedPath,
         [Alias("BackupLocalPath")]
         [string]$LocalPath,
-
         [string]$BackupJob,
-
         [int]$BackupRetention,
-
         [string]$BackupSchedule,
-
         [switch]$BackupScheduleDisabled,
-
         [ValidateSet("Daily", "Weekly", "AgentStart", "IdleComputer")]
         [object]$BackupScheduleFrequencyType,
-
         [object[]]$BackupScheduleFrequencyInterval,
-
         [ValidateSet('Time', 'Seconds', 'Minutes', 'Hours')]
         [object]$BackupScheduleFrequencySubdayType,
-
         [int]$BackupScheduleFrequencySubdayInterval,
-
         [ValidateSet('Unused', 'First', 'Second', 'Third', 'Fourth', 'Last')]
         [object]$BackupScheduleFrequencyRelativeInterval,
-
         [int]$BackupScheduleFrequencyRecurrenceFactor,
-
         [string]$BackupScheduleStartDate,
-
         [string]$BackupScheduleEndDate,
-
         [string]$BackupScheduleStartTime,
-
         [string]$BackupScheduleEndTime,
-
         [int]$BackupThreshold,
-
         [switch]$CompressBackup,
-
         [string]$CopyDestinationFolder,
-
         [string]$CopyJob,
-
         [int]$CopyRetention,
-
         [string]$CopySchedule,
-
         [switch]$CopyScheduleDisabled,
-
         [ValidateSet("Daily", "Weekly", "AgentStart", "IdleComputer")]
         [object]$CopyScheduleFrequencyType,
-
         [object[]]$CopyScheduleFrequencyInterval,
-
         [ValidateSet('Time', 'Seconds', 'Minutes', 'Hours')]
         [object]$CopyScheduleFrequencySubdayType,
-
         [int]$CopyScheduleFrequencySubdayInterval,
-
         [ValidateSet('Unused', 'First', 'Second', 'Third', 'Fourth', 'Last')]
         [object]$CopyScheduleFrequencyRelativeInterval,
-
         [int]$CopyScheduleFrequencyRecurrenceFactor,
-
         [string]$CopyScheduleStartDate,
-
         [string]$CopyScheduleEndDate,
-
         [string]$CopyScheduleStartTime,
-
         [string]$CopyScheduleEndTime,
-
         [switch]$DisconnectUsers,
-
         [string]$FullBackupPath,
-
         [switch]$GenerateFullBackup,
-
         [int]$HistoryRetention,
-
         [switch]$NoRecovery,
-
         [switch]$NoInitialization,
-
         [string]$PrimaryMonitorServer,
-
         [System.Management.Automation.PSCredential]
         $PrimaryMonitorCredential,
-
         [ValidateSet(0, "sqlserver", 1, "windows")]
         [object]$PrimaryMonitorServerSecurityMode,
-
         [switch]$PrimaryThresholdAlertEnabled,
-
         [string]$RestoreDataFolder,
-
         [string]$RestoreLogFolder,
-
         [int]$RestoreDelay,
-
         [int]$RestoreAlertThreshold,
-
         [string]$RestoreJob,
-
         [int]$RestoreRetention,
-
         [string]$RestoreSchedule,
-
         [switch]$RestoreScheduleDisabled,
-
         [ValidateSet("Daily", "Weekly", "AgentStart", "IdleComputer")]
         [object]$RestoreScheduleFrequencyType,
-
         [object[]]$RestoreScheduleFrequencyInterval,
-
         [ValidateSet('Time', 'Seconds', 'Minutes', 'Hours')]
         [object]$RestoreScheduleFrequencySubdayType,
-
         [int]$RestoreScheduleFrequencySubdayInterval,
-
         [ValidateSet('Unused', 'First', 'Second', 'Third', 'Fourth', 'Last')]
         [object]$RestoreScheduleFrequencyRelativeInterval,
-
         [int]$RestoreScheduleFrequencyRecurrenceFactor,
-
         [string]$RestoreScheduleStartDate,
-
         [string]$RestoreScheduleEndDate,
-
         [string]$RestoreScheduleStartTime,
-
         [string]$RestoreScheduleEndTime,
-
         [int]$RestoreThreshold,
-
         [string]$SecondaryDatabasePrefix,
-
         [string]$SecondaryDatabaseSuffix,
-
         [string]$SecondaryMonitorServer,
-
         [System.Management.Automation.PSCredential]
         $SecondaryMonitorCredential,
-
         [ValidateSet(0, "sqlserver", 1, "windows")]
         [object]$SecondaryMonitorServerSecurityMode,
-
         [switch]$SecondaryThresholdAlertEnabled,
-
         [switch]$Standby,
-
         [string]$StandbyDirectory,
-
         [switch]$UseExistingFullBackup,
-
         [string]$UseBackupFolder,
-
         [switch]$Force,
-
         [switch]$EnableException
     )
 
     begin {
+        if ($Force) { $ConfirmPreference = 'none' }
+
         Write-Message -Message "Started log shipping for $SourceSqlInstance to $DestinationSqlInstance" -Level Verbose
 
         # Try connecting to the instance
@@ -590,7 +529,7 @@ function Invoke-DbaDbLogShipping {
 
 
         # Check the instance if it is a named instance
-        $SourceServerName, $SourceInstanceName = $SourceSqlInstance.Split("\")
+        $SourceServerName, $SourceInstanceName = $SourceSqlInstance.FullName.Split("\")
 
         if ($null -eq $SourceInstanceName) {
             $SourceInstanceName = "MSSQLSERVER"
@@ -935,7 +874,7 @@ function Invoke-DbaDbLogShipping {
                 return
             }
 
-            $DestinationServerName, $DestinationInstanceName = $destInstance.Split("\")
+            $DestinationServerName, $DestinationInstanceName = $destInstance.FullName.Split("\")
 
             if ($null -eq $DestinationInstanceName) {
                 $DestinationInstanceName = "MSSQLSERVER"
@@ -1319,7 +1258,7 @@ function Invoke-DbaDbLogShipping {
                             Write-Message -Message "No path to the full backup is set. Trying to retrieve the last full backup for $db from $SourceSqlInstance" -Level Verbose
 
                             # Get the last full backup
-                            $LastBackup = Get-DbaBackupHistory -SqlInstance $SourceSqlInstance -Database $($db.Name) -LastFull -Credential $SourceSqlCredential
+                            $LastBackup = Get-DbaDbBackupHistory -SqlInstance $SourceSqlInstance -Database $($db.Name) -LastFull -Credential $SourceSqlCredential
 
                             # Check if there was a last backup
                             if ($null -eq $LastBackup) {
@@ -1448,7 +1387,7 @@ function Invoke-DbaDbLogShipping {
                 }
 
                 # Check the primary monitor server
-                if ($Force -and (-not$PrimaryMonitorServer -or [string]$PrimaryMonitorServer -eq '' -or $null -eq $PrimaryMonitorServer)) {
+                if ($Force -and (-not $PrimaryMonitorServer -or [string]$PrimaryMonitorServer -eq '' -or $null -eq $PrimaryMonitorServer)) {
                     Write-Message -Message "Setting monitor server for primary server to $SourceSqlInstance." -Level Verbose
                     $PrimaryMonitorServer = $SourceSqlInstance
                 }
@@ -1712,9 +1651,9 @@ function Invoke-DbaDbLogShipping {
                                 -RestoreThreshold $RestoreThreshold `
                                 -ThresholdAlertEnabled:$SecondaryThresholdAlertEnabled `
                                 -HistoryRetention $HistoryRetention `
-                                -MonitorServer $PrimaryMonitorServer `
-                                -MonitorServerSecurityMode $PrimaryMonitorServerSecurityMode `
-                                -MonitorCredential $PrimaryMonitorCredential
+                                -MonitorServer $SecondaryMonitorServer `
+                                -MonitorServerSecurityMode $SecondaryMonitorServerSecurityMode `
+                                -MonitorCredential $SecondaryMonitorCredential
 
                             # Check if the copy job needs to be enabled or disabled
                             if ($CopyScheduleDisabled) {

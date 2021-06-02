@@ -61,15 +61,16 @@ function Connect-SqlInstance {
         [PSCredential]$SqlCredential,
         [int]$StatementTimeout,
         [int]$MinimumVersion,
+        [string]$Database,
         [switch]$AzureUnsupported,
         [switch]$NonPooled
     )
     if ($SqlInstance.InputObject.GetType().Name -eq 'Server') {
-        if ($AzureUnsupported -and $server.DatabaseEngineType -eq "SqlAzureDatabase") {
+        if ($AzureUnsupported -and $SqlInstance.InputObject.DatabaseEngineType -eq "SqlAzureDatabase") {
             throw "Azure SQL Database is not supported by this command"
         }
         return $SqlInstance.InputObject
     } else {
-        Connect-DbaInstance @PSBoundParameters -ClientName (Get-DbatoolsConfigValue -FullName 'sql.connection.clientname')
+        Connect-DbaInstance @PSBoundParameters
     }
 }

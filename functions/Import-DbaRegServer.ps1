@@ -10,7 +10,11 @@ function Import-DbaRegServer {
         The target SQL Server instance or instances.
 
     .PARAMETER SqlCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Group
         Imports to specific group
@@ -138,7 +142,12 @@ function Import-DbaRegServer {
                     if (-not $object.ServerName) {
                         Stop-Function -Message "Property 'ServerName' not found in InputObject. No servers added." -Continue
                     }
-                    Add-DbaRegServer -SqlInstance $instance -SqlCredential $SqlCredential -Name $object.Name -ServerName $object.ServerName -Description $object.Description -Group $groupobject
+
+                    if (-not (Test-Bound -ParameterName Group)) {
+                        Add-DbaRegServer -SqlInstance $instance -SqlCredential $SqlCredential -Name $object.Name -ServerName $object.ServerName -Description $object.Description -Group $object.Group
+                    } else {
+                        Add-DbaRegServer -SqlInstance $instance -SqlCredential $SqlCredential -Name $object.Name -ServerName $object.ServerName -Description $object.Description -Group $groupobject
+                    }
                 }
             }
         }

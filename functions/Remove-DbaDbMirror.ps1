@@ -11,16 +11,14 @@ function Remove-DbaDbMirror {
         to be executed against multiple SQL Server instances.
 
     .PARAMETER SqlCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Database
         The target database.
-
-    .PARAMETER Partner
-        The partner fqdn.
-
-    .PARAMETER Witness
-        The witness fqdn.
 
     .PARAMETER InputObject
         Allows piping from Get-DbaDatabase.
@@ -37,25 +35,30 @@ function Remove-DbaDbMirror {
         Using this switch turns this "nice by default" feature off and enables you to catch exceptions with your own try/catch.
 
     .NOTES
-        Tags: Mirror, HA
+        Tags: Mirroring, Mirror, HA
         Author: Chrissy LeMaire (@cl), netnerds.net
+
         dbatools PowerShell module (https://dbatools.io)
         Copyright: (c) 2018 by dbatools, licensed under MIT
         License: MIT https://opensource.org/licenses/MIT
 
     .LINK
-        https://dbatools.io/Set-DbaDbMirror
+        https://dbatools.io/Remove-DbaDbMirror
 
     .EXAMPLE
-        PS C:\> Set-DbaDbMirror -SqlInstance localhost
+        PS C:\> Remove-DbaDbMirror -SqlInstance localhost -Database TestDB
 
-        Returns all Endpoint(s) on the local default SQL Server instance
+        Stops the database mirroring session for the TestDB on the localhost instance.
 
     .EXAMPLE
-        PS C:\> Set-DbaDbMirror -SqlInstance localhost, sql2016
+        PS C:\> Remove-DbaDbMirror -SqlInstance localhost -Database TestDB1, TestDB2
 
-        Returns all Endpoint(s) for the local and sql2016 SQL Server instances
+        Stops the database mirroring session for the TestDB1 and TestDB2 databases on the localhost instance.
 
+    .EXAMPLE
+        PS C:\> Get-DbaDatabase -SqlInstance localhost -Database TestDB1, TestDB2 | Remove-DbaDbMirror
+
+        Stops the database mirroring session for the TestDB1 and TestDB2 databases on the localhost instance.
     #>
     [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
     param (
@@ -77,16 +80,21 @@ function Remove-DbaDbMirror {
 
         foreach ($db in $InputObject) {
             if ($Pscmdlet.ShouldProcess($db.Parent.Name, "Turning off mirror for $db")) {
-                # use t-sql cuz $db.Alter() doesnt always work against restoring dbs
+                # use t-sql cuz $db.Alter() does not always work against restoring dbs
                 try {
                     try {
                         $db.ChangeMirroringState([Microsoft.SqlServer.Management.Smo.MirroringOption]::Off)
                         $db.Alter()
                     } catch {
-                        try {
-                            $db.Parent.Query("ALTER DATABASE $db SET PARTNER OFF")
-                        } catch {
-                            Stop-Function -Message "Failure on $($db.Parent) for $db" -ErrorRecord $_ -Continue
+                        # The $db.Alter() command may both succeed and return an error code related to the mirror session being stopped.
+                        # Refresh the db state and if the mirror session is still active then run the ALTER statement.
+                        $db.Refresh()
+                        if ($db.IsMirroringEnabled) {
+                            try {
+                                $db.Parent.Query("ALTER DATABASE $db SET PARTNER OFF")
+                            } catch {
+                                Stop-Function -Message "Failure on $($db.Parent) for $db" -ErrorRecord $_ -Continue
+                            }
                         }
                     }
                     [pscustomobject]@{

@@ -24,7 +24,7 @@ function Invoke-ManagedComputerCommand {
 
         .PARAMETER EnableException
             Left in for legacy reasons. This command will throw no matter what
-       #>
+    #>
     [CmdletBinding()]
     param (
         [Parameter(Mandatory)]
@@ -33,7 +33,7 @@ function Invoke-ManagedComputerCommand {
         [PSCredential]$Credential,
         [Parameter(Mandatory)]
         [scriptblock]$ScriptBlock,
-        [string[]]$ArgumentList,
+        [object[]]$ArgumentList,
         [switch]$EnableException # Left in for legacy but this command needs to throw
     )
 
@@ -57,7 +57,7 @@ function Invoke-ManagedComputerCommand {
     $prescriptblock = $setupScriptBlock.ToString()
     $postscriptblock = $ScriptBlock.ToString()
 
-    $scriptblock = [ScriptBlock]::Create("$prescriptblock  $postscriptblock")
+    $scriptBlock = [ScriptBlock]::Create("$prescriptblock  $postscriptblock")
     Write-Message -Level Verbose -Message "Connecting to SQL WMI on $computer."
 
     try {

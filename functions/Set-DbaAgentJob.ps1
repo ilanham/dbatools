@@ -10,7 +10,11 @@ function Set-DbaAgentJob {
         The target SQL Server instance or instances. You must have sysadmin access and server version must be SQL Server version 2000 or greater.
 
     .PARAMETER SqlCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Job
         The name of the job.
@@ -184,6 +188,8 @@ function Set-DbaAgentJob {
     )
 
     begin {
+        if ($Force) { $ConfirmPreference = 'none' }
+
         # Check of the event log level is of type string and set the integer value
         if (($EventLogLevel -notin 0, 1, 2, 3) -and ($null -ne $EventLogLevel)) {
             $EventLogLevel = switch ($EventLogLevel) { "Never" { 0 } "OnSuccess" { 1 } "OnFailure" { 2 } "Always" { 3 } }
@@ -211,19 +217,37 @@ function Set-DbaAgentJob {
 
         # Check the e-mail operator name
         if (($EmailLevel -ge 1) -and (-not $EmailOperator)) {
-            Stop-Function -Message "Please set the e-mail operator when the e-mail level parameter is set." -Target $sqlinstance
+            Stop-Function -Message "Please set the e-mail operator when the e-mail level parameter is set." -Target $SqlInstance
             return
         }
 
-        # Check the e-mail operator name
+        # Check the e-mail level parameter
+        if ($EmailOperator -and ($null -eq $EmailLevel)) {
+            Stop-Function -Message "Please set the e-mail level parameter when the e-mail level operator is set." -Target $SqlInstance
+            return
+        }
+
+        # Check the net send operator name
         if (($NetsendLevel -ge 1) -and (-not $NetsendOperator)) {
-            Stop-Function -Message "Please set the netsend operator when the netsend level parameter is set." -Target $sqlinstance
+            Stop-Function -Message "Please set the netsend operator when the netsend level parameter is set." -Target $SqlInstance
             return
         }
 
-        # Check the e-mail operator name
+        # Check the net send level parameter
+        if ($NetsendOperator -and ($null -eq $NetsendLevel)) {
+            Stop-Function -Message "Please set the net send level parameter when the net send level operator is set." -Target $SqlInstance
+            return
+        }
+
+        # Check the page operator name
         if (($PageLevel -ge 1) -and (-not $PageOperator)) {
-            Stop-Function -Message "Please set the page operator when the page level parameter is set." -Target $sqlinstance
+            Stop-Function -Message "Please set the page operator when the page level parameter is set." -Target $SqlInstance
+            return
+        }
+
+        # Check the page level parameter
+        if ($PageOperator -and ($null -eq $PageLevel)) {
+            Stop-Function -Message "Please set the page level parameter when the page level operator is set." -Target $SqlInstance
             return
         }
     }
@@ -233,11 +257,11 @@ function Set-DbaAgentJob {
         if (Test-FunctionInterrupt) { return }
 
         if ((-not $InputObject) -and (-not $Job)) {
-            Stop-Function -Message "You must specify a job name or pipe in results from another command" -Target $sqlinstance
+            Stop-Function -Message "You must specify a job name or pipe in results from another command" -Target $SqlInstance
             return
         }
 
-        foreach ($instance in $sqlinstance) {
+        foreach ($instance in $SqlInstance) {
             # Try connecting to the instance
             try {
                 $server = Connect-SqlInstance -SqlInstance $instance -SqlCredential $SqlCredential

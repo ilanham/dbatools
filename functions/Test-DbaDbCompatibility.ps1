@@ -9,8 +9,12 @@ function Test-DbaDbCompatibility {
     .PARAMETER SqlInstance
         The target SQL Server instance or instances.
 
-    .PARAMETER Credential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+    .PARAMETER SqlCredential
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Database
         Specifies the database(s) to process. Options for this list are auto-populated from the server. If unspecified, all databases will be processed.
@@ -60,7 +64,7 @@ function Test-DbaDbCompatibility {
     param (
         [parameter(Mandatory, ValueFromPipeline)]
         [DbaInstanceParameter[]]$SqlInstance,
-        [PSCredential]$Credential,
+        [PSCredential]$SqlCredential,
         [object[]]$Database,
         [object[]]$ExcludeDatabase,
         [switch]$EnableException
@@ -73,8 +77,8 @@ function Test-DbaDbCompatibility {
                 Stop-Function -Message "Error occurred while establishing connection to $instance" -Category ConnectionError -ErrorRecord $_ -Target $instance -Continue
             }
 
-            $serverversion = "Version$($server.VersionMajor)0"
-            $dbs = $server.Databases | Where-Object IsAccessible
+            $serverLevel = [Microsoft.SqlServer.Management.Smo.CompatibilityLevel]"Version$($server.VersionMajor)0"
+            $dbs = $server.Databases
 
             if ($Database) {
                 $dbs = $dbs | Where-Object { $Database -contains $_.Name }
@@ -90,10 +94,10 @@ function Test-DbaDbCompatibility {
                     ComputerName          = $server.ComputerName
                     InstanceName          = $server.ServiceName
                     SqlInstance           = $server.DomainInstanceName
-                    ServerLevel           = $serverversion
+                    ServerLevel           = $serverLevel
                     Database              = $db.name
                     DatabaseCompatibility = $db.CompatibilityLevel
-                    IsEqual               = $db.CompatibilityLevel -eq $serverversion
+                    IsEqual               = $db.CompatibilityLevel -eq $serverLevel
                 }
             }
         }

@@ -10,7 +10,11 @@ function Get-DbaEndpoint {
         The target SQL Server instance or instances.
 
     .PARAMETER SqlCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Endpoint
         Return only specific endpoints.
@@ -43,7 +47,6 @@ function Get-DbaEndpoint {
         PS C:\> Get-DbaEndpoint -SqlInstance localhost, sql2016
 
         Returns all endpoints for the local and sql2016 SQL Server instances
-
     #>
     [CmdletBinding()]
     param (
@@ -65,31 +68,35 @@ function Get-DbaEndpoint {
 
             # Not sure why minimumversion isnt working
             if ($server.VersionMajor -lt 9) {
-                Stop-Function -Message "SQL Server version 9 required - $instance not supported." -Category ConnectionError -ErrorRecord $_ -Target $instance -Continue
+                Stop-Function -Message "SQL Server version 9 required - $server not supported." -Category ConnectionError -ErrorRecord $_ -Target $server -Continue
             }
 
             $endpoints = $server.Endpoints
 
-            if ($endpoint) {
-                $endpoints = $endpoints | Where-Object Name -in $endpoint
+            if ($Endpoint) {
+                $endpoints = $endpoints | Where-Object Name -In $Endpoint
             }
             if ($Type) {
-                $endpoints = $endpoints | Where-Object EndpointType -in $Type
+                $endpoints = $endpoints | Where-Object EndpointType -In $Type
             }
 
             foreach ($end in $endpoints) {
                 Write-Message -Level Verbose -Message "Getting endpoint $($end.Name) on $($server.Name)"
                 if ($end.Protocol.Tcp.ListenerPort) {
-                    if ($instance.ComputerName -match '\.') {
-                        $dns = $instance.ComputerName
+                    if ($end.Protocol.Tcp.ListenerIPAddress -ne [System.Net.IPAddress]'0.0.0.0') {
+                        $dns = $end.Protocol.Tcp.ListenerIPAddress
+                    } elseif ($server.HostPlatform -eq "Linux" -and $server.NetName) {
+                        $dns = $server.NetName
+                    } elseif ($server.ComputerName -match '\.') {
+                        $dns = $server.ComputerName
                     } else {
                         try {
-                            $dns = [System.Net.Dns]::GetHostEntry($instance.ComputerName).HostName
+                            $dns = [System.Net.Dns]::GetHostEntry($server.ComputerName).HostName
                         } catch {
                             try {
-                                $dns = [System.Net.Dns]::GetHostAddresses($instance.ComputerName)
+                                $dns = [System.Net.Dns]::GetHostAddresses($server.ComputerName)
                             } catch {
-                                $dns = $instance.ComputerName
+                                $dns = $server.ComputerName
                             }
                         }
                     }
@@ -103,9 +110,10 @@ function Get-DbaEndpoint {
                 Add-Member -Force -InputObject $end -MemberType NoteProperty -Name InstanceName -Value $server.ServiceName
                 Add-Member -Force -InputObject $end -MemberType NoteProperty -Name SqlInstance -Value $server.DomainInstanceName
                 Add-Member -Force -InputObject $end -MemberType NoteProperty -Name Fqdn -Value $fqdn
+                Add-Member -Force -InputObject $end -MemberType NoteProperty -Name IPAddress -Value $end.Protocol.Tcp.ListenerIPAddress
                 Add-Member -Force -InputObject $end -MemberType NoteProperty -Name Port -Value $end.Protocol.Tcp.ListenerPort
                 if ($end.Protocol.Tcp.ListenerPort) {
-                    Select-DefaultView -InputObject $end -Property ComputerName, InstanceName, SqlInstance, ID, Name, Port, EndpointState, EndpointType, Owner, IsAdminEndpoint, Fqdn, IsSystemObject
+                    Select-DefaultView -InputObject $end -Property ComputerName, InstanceName, SqlInstance, ID, Name, IPAddress, Port, EndpointState, EndpointType, Owner, IsAdminEndpoint, Fqdn, IsSystemObject
                 } else {
                     Select-DefaultView -InputObject $end -Property ComputerName, InstanceName, SqlInstance, ID, Name, EndpointState, EndpointType, Owner, IsAdminEndpoint, Fqdn, IsSystemObject
                 }

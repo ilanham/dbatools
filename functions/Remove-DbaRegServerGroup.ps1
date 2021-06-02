@@ -10,7 +10,11 @@ function Remove-DbaRegServerGroup {
         The target SQL Server instance or instances.
 
     .PARAMETER SqlCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Name
         Specifies one or more groups to include from SQL Server Central Management Server.
@@ -68,16 +72,36 @@ function Remove-DbaRegServerGroup {
             $InputObject += Get-DbaRegServerGroup -SqlInstance $instance -SqlCredential $SqlCredential -Group $Name
         }
 
-        foreach ($regservergroup in $InputObject) {
-            $parentserver = Get-RegServerParent -InputObject $regservergroup
+        if (-not $SqlInstance -and -not $InputObject) {
+            $InputObject += Get-DbaRegServerGroup -Group $Name
+        }
 
-            if ($null -eq $parentserver) {
-                Stop-Function -Message "Something went wrong and it's hard to explain, sorry. This basically shouldn't happen." -Continue
+        foreach ($regservergroup in $InputObject) {
+            if ($regservergroup.ID) {
+                $parentserver = Get-RegServerParent -InputObject $regservergroup
+                $target = $parentserver.DomainInstanceName
+                if ($null -eq $parentserver) {
+                    Stop-Function -Message "Something went wrong and it's hard to explain, sorry. This basically shouldn't happen." -Continue
+                }
+                $defaults = "ComputerName", "InstanceName", "SqlInstance", "Name", "Status"
+            } else {
+                $target = "Local Registered Servers"
+                $defaults = "Name", "Status"
             }
 
-            if ($Pscmdlet.ShouldProcess($parentserver.DomainInstanceName, "Removing $($regservergroup.Name) CMS Group")) {
-                $null = $parentserver.ServerConnection.ExecuteNonQuery($regservergroup.ScriptDrop().GetScript())
-                $parentserver.ServerConnection.Disconnect()
+            if ($Pscmdlet.ShouldProcess($target, "Removing $($regservergroup.Name) Group")) {
+                if ($regservergroup.Source -eq "Azure Data Studio") {
+                    Stop-Function -Message "You cannot use dbatools to remove or add registered server groups in Azure Data Studio" -Continue
+                }
+
+                # try to avoid 'Collection was modified after the enumerator was instantiated' issue
+                if ($regservergroup.ID) {
+                    $null = $parentserver.ServerConnection.ExecuteNonQuery($regservergroup.ScriptDrop().GetScript())
+                    $parentserver.ServerConnection.Disconnect()
+                } else {
+                    $regservergroup.Drop()
+                }
+
                 try {
                     [pscustomobject]@{
                         ComputerName = $parentserver.ComputerName
@@ -85,7 +109,7 @@ function Remove-DbaRegServerGroup {
                         SqlInstance  = $parentserver.SqlInstance
                         Name         = $regservergroup.Name
                         Status       = "Dropped"
-                    }
+                    } | Select-DefaultView -Property $defaults
                 } catch {
                     Stop-Function -Message "Failed to drop $regservergroup on $parentserver" -ErrorRecord $_ -Continue
                 }

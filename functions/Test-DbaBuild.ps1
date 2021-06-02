@@ -5,6 +5,7 @@ function Test-DbaBuild {
 
     .DESCRIPTION
         Returns info about the specific build of a SQL instance, including the SP, the CU and the reference KB, End Of Support, wherever possible. It adds a Compliance property as true/false, and adds details about the "targeted compliance".
+        The build data used can be found here: https://dbatools.io/builds
 
     .PARAMETER Build
         Instead of connecting to a real instance, pass a string identifying the build to get the info back.
@@ -22,7 +23,11 @@ function Test-DbaBuild {
         Target any number of instances, in order to return their compliance state.
 
     .PARAMETER SqlCredential
-        When connecting to an instance, use the credentials specified.
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Update
         Looks online for the most up to date reference, replacing the local one.
@@ -140,7 +145,7 @@ function Test-DbaBuild {
             $MaxBehindValidator = [regex]'^(?<howmany>[\d]+)(?<what>SP|CU)$'
             $pieces = $MaxBehind.Split(' ')	| Where-Object { $_ }
             try {
-                $ParsedMaxBehind = @{}
+                $ParsedMaxBehind = @{ }
                 foreach ($piece in $pieces) {
                     $pieceMatch = $MaxBehindValidator.Match($piece)
                     if ($pieceMatch.Success -ne $true) {
@@ -221,6 +226,7 @@ function Test-DbaBuild {
                             VersionObject = $el.VersionObject
                             SP            = $lastsp
                             CU            = $el.CU
+                            Retired       = $el.Retired
                         }
                     }
                 }
@@ -239,7 +245,7 @@ function Test-DbaBuild {
                         $targetedBuild = $SPsAndCUs | Where-Object SP -eq $targetSPName | Select-Object -First 1
                     }
                     if ($ParsedMaxBehind.ContainsKey('CU')) {
-                        [string[]]$AllCUs = ($SPsAndCUs | Where-Object VersionObject -gt $targetedBuild.VersionObject).CU | Select-Object -Unique
+                        [string[]]$AllCUs = ($SPsAndCUs | Where-Object VersionObject -gt $targetedBuild.VersionObject | Where-Object Retired -ne $true).CU | Select-Object -Unique
                         if ($AllCUs.Length -gt 0) {
                             #CU after the targeted build available
                             $targetCU = $AllCUs.Length - $ParsedMaxBehind['CU'] - 1

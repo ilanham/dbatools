@@ -30,6 +30,9 @@ function Invoke-Command2 {
             Name of the remote PSSessionConfiguration to use.
             Should be registered already using Register-PSSessionConfiguration or internal Register-RemoteSessionConfiguration.
 
+        .PARAMETER UseSSL
+            Enables SSL
+
         .PARAMETER ArgumentList
             Any arguments to pass to the scriptblock being run
 
@@ -58,12 +61,13 @@ function Invoke-Command2 {
         [ValidateSet('Default', 'Basic', 'Negotiate', 'NegotiateWithImplicitCredential', 'Credssp', 'Digest', 'Kerberos')]
         [string]$Authentication = 'Default',
         [string]$ConfigurationName,
+        [switch]$UseSSL = (Get-DbatoolsConfigValue -FullName 'PSRemoting.PsSession.UseSSL' -Fallback $false),
         [switch]$Raw,
         [version]$RequiredPSVersion
     )
     <# Note: Credential stays as an object type for legacy reasons. #>
 
-    $InvokeCommandSplat = @{}
+    $InvokeCommandSplat = @{ }
     if ($ArgumentList) {
         $InvokeCommandSplat["ArgumentList"] = $ArgumentList
     }
@@ -74,13 +78,13 @@ function Invoke-Command2 {
         $runspaceId = [System.Management.Automation.Runspaces.Runspace]::DefaultRunspace.InstanceId
         # sessions with different Authentication should have different session names
         if ($ConfigurationName) {
-            $sessionName = "dbatools_$($Authentication)_$($ConfigurationName)_$runspaceId"
+            $sessionName = "dbatools_$($Authentication)_$($ConfigurationName)_$($runspaceId)_$($ComputerName.ComputerName)"
         } else {
-            $sessionName = "dbatools_$($Authentication)_$runspaceId"
+            $sessionName = "dbatools_$($Authentication)_$($runspaceId)_$($ComputerName.ComputerName)"
         }
 
         # Retrieve a session from the session cache, if available (it's unique per runspace)
-        $currentSession = [Sqlcollaborative.Dbatools.Connection.ConnectionHost]::PSSessionGet($runspaceId, $ComputerName.ComputerName) | Where-Object { $_.State -Match "Opened|Disconnected" -and $_.Name -eq $sessionName }
+        $currentSession = [Sqlcollaborative.Dbatools.Connection.ConnectionHost]::PSSessionGet($runspaceId, $sessionName) | Where-Object { $_.State -Match "Opened|Disconnected" }
         if (-not $currentSession) {
             Write-Message -Level Debug "Creating new $Authentication session [$sessionName] for $($ComputerName.ComputerName)"
             $psSessionSplat = @{
@@ -88,10 +92,15 @@ function Invoke-Command2 {
                 Authentication = $Authentication
                 Name           = $sessionName
                 ErrorAction    = 'Stop'
+                UseSSL         = (Get-DbatoolsConfigValue -FullName 'PSRemoting.PsSession.UseSSL' -Fallback $false)
             }
             if (Test-Windows -NoWarn) {
-                $timeout = New-PSSessionOption -IdleTimeout (New-TimeSpan -Minutes 10).TotalMilliSeconds
-                $psSessionSplat += @{ SessionOption = $timeout }
+                $psSessionOptionsSplat = @{
+                    IdleTimeout      = (New-TimeSpan -Minutes 10).TotalMilliSeconds
+                    IncludePortInSPN = (Get-DbatoolsConfigValue -FullName 'PSRemoting.PsSessionOption.IncludePortInSPN' -Fallback $false)
+                }
+                $sessionOption = New-PSSessionOption @psSessionOptionsSplat
+                $psSessionSplat += @{ SessionOption = $sessionOption }
             }
             if ($Credential) {
                 $psSessionSplat += @{ Credential = $Credential }
@@ -109,7 +118,7 @@ function Invoke-Command2 {
             $InvokeCommandSplat["Session"] = $currentSession
 
             # Refresh the session registration if registered, to reset countdown until purge
-            [Sqlcollaborative.Dbatools.Connection.ConnectionHost]::PSSessionSet($runspaceId, $ComputerName.ComputerName, $currentSession)
+            [Sqlcollaborative.Dbatools.Connection.ConnectionHost]::PSSessionSet($runspaceId, $sessionName, $currentSession)
         }
     }
     if ($RequiredPSVersion) {
@@ -128,7 +137,7 @@ function Invoke-Command2 {
 
     if (-not $ComputerName.IsLocalhost) {
         # Tell the system to clean up if the session expires
-        [Sqlcollaborative.Dbatools.Connection.ConnectionHost]::PSSessionSet($runspaceId, $ComputerName.ComputerName, $currentSession)
+        [Sqlcollaborative.Dbatools.Connection.ConnectionHost]::PSSessionSet($runspaceId, $sessionName, $currentSession)
 
         if (-not (Get-DbatoolsConfigValue -FullName 'PSRemoting.Sessions.Enable' -Fallback $true)) {
             $currentSession | Remove-PSSession

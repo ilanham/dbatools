@@ -82,6 +82,7 @@ function New-DbaAzAccessToken {
         Once the connection is made, it is used to perform a test query.
 
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseShouldProcessForStateChangingFunctions", "")]
     [CmdletBinding()]
     param (
         [parameter(Mandatory)]
@@ -161,7 +162,10 @@ function New-DbaAzAccessToken {
                 public string ClientSecret { get; set; }
             }
 "@
-            Add-Type -TypeDefinition $source -ReferencedAssemblies ([Microsoft.SqlServer.Management.Common.IRenewableToken].Assembly)
+            Add-Type -TypeDefinition $source -ReferencedAssemblies ([Microsoft.SqlServer.Management.Common.IRenewableToken].Assembly,
+                [PowerShell].Assembly,
+                [Microsoft.SqlServer.Management.Common.IRenewableToken].Assembly.GetReferencedAssemblies()[0])
+
         }
 
         switch ($Subtype) {

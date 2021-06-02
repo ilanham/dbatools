@@ -10,13 +10,20 @@ function Get-DbaDbFile {
         The target SQL Server instance or instances
 
     .PARAMETER SqlCredential
-        Credentials to connect to the SQL Server instance if the calling user doesn't have permission
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Database
         The database(s) to process - this list is auto-populated from the server. If unspecified, all databases will be processed.
 
     .PARAMETER ExcludeDatabase
         The database(s) to exclude - this list is auto-populated from the server
+
+    .PARAMETER FileGroup
+        Filter results to only files within this certain filegroup.
 
     .PARAMETER InputObject
         A piped collection of database objects
@@ -33,6 +40,9 @@ function Get-DbaDbFile {
         Website: https://dbatools.io
         Copyright: (c) 2018 by dbatools, licensed under MIT
         License: MIT https://opensource.org/licenses/MIT
+
+    .LINK
+        https://dbatools.io/Get-DbaDbFile
 
     .EXAMPLE
         PS C:\> Get-DbaDbFile -SqlInstance sql2016
@@ -53,6 +63,11 @@ function Get-DbaDbFile {
         PS C:\> Get-DbaDatabase -SqlInstance sql2016 -Database Impromptu, Trading | Get-DbaDbFile
 
         Will accept piped input from Get-DbaDatabase and return an object containing all file groups and their contained files for the Impromptu and Trading databases on the sql2016 SQL Server instance
+
+    .EXAMPLE
+        PS C:\> Get-DbaDbFile -SqlInstance sql2016 -Database AdventureWorks2017 -FileGroup Index
+
+        Return any files that are in the Index filegroup of the AdventureWorks2017 database.
     #>
     [CmdletBinding()]
     param (
@@ -61,6 +76,7 @@ function Get-DbaDbFile {
         [PSCredential]$SqlCredential,
         [object[]]$Database,
         [object[]]$ExcludeDatabase,
+        [object[]]$FileGroup,
         [parameter(ValueFromPipeline)]
         [Microsoft.SqlServer.Management.Smo.Database[]]$InputObject,
         [switch]$EnableException
@@ -77,18 +93,18 @@ function Get-DbaDbFile {
             df.state_desc as State,
             df.max_size as MaxSize,
             case mf.is_percent_growth when 1 then df.growth else df.Growth*8 end as Growth,
-            fileproperty(df.name, 'spaceused') as UsedSpace,
+            COALESCE(fileproperty(df.name, 'spaceused'), 0) as UsedSpace,
             df.size as Size,
-            vfs.size_on_disk_bytes as size_on_disk_bytes,
+            COALESCE(vfs.size_on_disk_bytes, 0) as size_on_disk_bytes,
             case df.state_desc when 'OFFLINE' then 'True' else 'False' End as IsOffline,
             case mf.is_read_only when 1 then 'True' when 0 then 'False' End as IsReadOnly,
             case mf.is_media_read_only when 1 then 'True' when 0 then 'False' End as IsReadOnlyMedia,
             case mf.is_sparse when 1 then 'True' when 0 then 'False' End as IsSparse,
             case mf.is_percent_growth when 1 then 'Percent' when 0 then 'kb' End as GrowthType,
-            vfs.num_of_writes as NumberOfDiskWrites,
-            vfs.num_of_reads as NumberOfDiskReads,
-            vfs.num_of_bytes_read as BytesReadFromDisk,
-            vfs.num_of_bytes_written as BytesWrittenToDisk,
+            COALESCE(vfs.num_of_writes, 0) as NumberOfDiskWrites,
+            COALESCE(vfs.num_of_reads, 0) as NumberOfDiskReads,
+            COALESCE(vfs.num_of_bytes_read, 0) as BytesReadFromDisk,
+            COALESCE(vfs.num_of_bytes_written, 0) as BytesWrittenToDisk,
             fg.data_space_id as FileGroupDataSpaceId,
             fg.Type as FileGroupType,
             fg.type_desc as FileGroupTypeDescription,
@@ -97,7 +113,7 @@ function Get-DbaDbFile {
 
         $sqlfrom = "from sys.database_files df
             left outer join  sys.filegroups fg on df.data_space_id=fg.data_space_id
-            inner join sys.dm_io_virtual_file_stats(db_id(),NULL) vfs on df.file_id=vfs.file_id
+            left join sys.dm_io_virtual_file_stats(db_id(),NULL) vfs on df.file_id=vfs.file_id
             inner join sys.master_files mf on df.file_id = mf.file_id
             and mf.database_id = db_id()"
 
@@ -164,6 +180,11 @@ function Get-DbaDbFile {
                 Stop-Function -Message "Failure" -ErrorRecord $_ -Continue
             }
 
+            if (Test-Bound -ParameterName FileGroup) {
+                Write-Message -Message "Results will be filtered to FileGroup specified" -Level Verbose
+                $results = $results | Where-Object { $_.FileGroupName -eq $FileGroup }
+            }
+
             foreach ($result in $results) {
                 $size = [dbasize]($result.Size * 8192)
                 $usedspace = [dbasize]($result.UsedSpace * 8192)
@@ -204,53 +225,53 @@ ON fd.Drive = LEFT(df.physical_name, 1);
                             $_.drive -eq $result.PhysicalName.Substring(0, 1)
                         } | Select-Object $MbFreeColName
 
-                        $VolumeFreeSpace = [dbasize](($free.MB_Free) * 1024 * 1024)
-                    }
+                    $VolumeFreeSpace = [dbasize](($free.MB_Free) * 1024 * 1024)
                 }
-                if ($result.GrowthType -eq "Percent") {
-                    $nextgrowtheventadd = [dbasize]($result.size * 8 * ($result.Growth * 0.01) * 1024)
-                } else {
-                    $nextgrowtheventadd = [dbasize]($result.Growth * 1024)
-                }
-                if (($nextgrowtheventadd.Byte -gt ($MaxSize.Byte - $size.Byte)) -and $maxsize -gt 0) {
-                    [dbasize]$nextgrowtheventadd = 0
-                }
+            }
+            if ($result.GrowthType -eq "Percent") {
+                $nextgrowtheventadd = [dbasize]($result.size * 8 * ($result.Growth * 0.01) * 1024)
+            } else {
+                $nextgrowtheventadd = [dbasize]($result.Growth * 1024)
+            }
+            if (($nextgrowtheventadd.Byte -gt ($MaxSize.Byte - $size.Byte)) -and $maxsize -gt 0) {
+                [dbasize]$nextgrowtheventadd = 0
+            }
 
-                [PSCustomObject]@{
-                    ComputerName             = $server.ComputerName
-                    InstanceName             = $server.ServiceName
-                    SqlInstance              = $server.DomainInstanceName
-                    Database                 = $db.name
-                    FileGroupName            = $result.FileGroupName
-                    ID                       = $result.ID
-                    Type                     = $result.Type
-                    TypeDescription          = $result.TypeDescription
-                    LogicalName              = $result.LogicalName.Trim()
-                    PhysicalName             = $result.PhysicalName.Trim()
-                    State                    = $result.State
-                    MaxSize                  = $maxsize
-                    Growth                   = $result.Growth
-                    GrowthType               = $result.GrowthType
-                    NextGrowthEventSize      = $nextgrowtheventadd
-                    Size                     = $size
-                    UsedSpace                = $usedspace
-                    AvailableSpace           = $AvailableSpace
-                    IsOffline                = $result.IsOffline
-                    IsReadOnly               = $result.IsReadOnly
-                    IsReadOnlyMedia          = $result.IsReadOnlyMedia
-                    IsSparse                 = $result.IsSparse
-                    NumberOfDiskWrites       = $result.NumberOfDiskWrites
-                    NumberOfDiskReads        = $result.NumberOfDiskReads
-                    ReadFromDisk             = [dbasize]$result.BytesReadFromDisk
-                    WrittenToDisk            = [dbasize]$result.BytesWrittenToDisk
-                    VolumeFreeSpace          = $VolumeFreeSpace
-                    FileGroupDataSpaceId     = $result.FileGroupDataSpaceId
-                    FileGroupType            = $result.FileGroupType
-                    FileGroupTypeDescription = $result.FileGroupTypeDescription
-                    FileGroupDefault         = $result.FileGroupDefault
-                    FileGroupReadOnly        = $result.FileGroupReadOnly
-                }
+            [PSCustomObject]@{
+                ComputerName             = $server.ComputerName
+                InstanceName             = $server.ServiceName
+                SqlInstance              = $server.DomainInstanceName
+                Database                 = $db.name
+                FileGroupName            = $result.FileGroupName
+                ID                       = $result.ID
+                Type                     = $result.Type
+                TypeDescription          = $result.TypeDescription
+                LogicalName              = $result.LogicalName.Trim()
+                PhysicalName             = $result.PhysicalName.Trim()
+                State                    = $result.State
+                MaxSize                  = $maxsize
+                Growth                   = $result.Growth
+                GrowthType               = $result.GrowthType
+                NextGrowthEventSize      = $nextgrowtheventadd
+                Size                     = $size
+                UsedSpace                = $usedspace
+                AvailableSpace           = $AvailableSpace
+                IsOffline                = $result.IsOffline
+                IsReadOnly               = $result.IsReadOnly
+                IsReadOnlyMedia          = $result.IsReadOnlyMedia
+                IsSparse                 = $result.IsSparse
+                NumberOfDiskWrites       = $result.NumberOfDiskWrites
+                NumberOfDiskReads        = $result.NumberOfDiskReads
+                ReadFromDisk             = [dbasize]$result.BytesReadFromDisk
+                WrittenToDisk            = [dbasize]$result.BytesWrittenToDisk
+                VolumeFreeSpace          = $VolumeFreeSpace
+                FileGroupDataSpaceId     = $result.FileGroupDataSpaceId
+                FileGroupType            = $result.FileGroupType
+                FileGroupTypeDescription = $result.FileGroupTypeDescription
+                FileGroupDefault         = $result.FileGroupDefault
+                FileGroupReadOnly        = $result.FileGroupReadOnly
             }
         }
     }
+}
 }

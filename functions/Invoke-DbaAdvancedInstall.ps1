@@ -72,6 +72,15 @@ function Invoke-DbaAdvancedInstall {
         This avoids overwhelming you with "sea of red" exceptions, but is inconvenient because it basically disables advanced scripting.
         Using this switch turns this "nice by default" feature off and enables you to catch exceptions with your own try/catch.
 
+    .NOTES
+        Tags: Instance, Update
+        Website: https://dbatools.io
+        Copyright: (c) 2018 by dbatools, licensed under MIT
+        License: MIT https://opensource.org/licenses/MIT
+
+    .LINK
+    https://dbatools.io/Invoke-DbaAdvancedInstall
+
     .EXAMPLE
     PS C:\> Invoke-DbaAdvancedUpdate -ComputerName SQL1 -Action $actions
 
@@ -110,16 +119,18 @@ function Invoke-DbaAdvancedInstall {
                 [version]$Version
             )
             $versionNumber = "$($Version.Major)$($Version.Minor)".Substring(0, 3)
-            $rootPath = "$env:ProgramFiles\Microsoft SQL Server\$versionNumber\Setup Bootstrap\Log"
+            $rootPath = "$([System.Environment]::GetFolderPath("ProgramFiles"))\Microsoft SQL Server\$versionNumber\Setup Bootstrap\Log"
             $summaryPath = "$rootPath\Summary.txt"
             $output = [PSCustomObject]@{
                 Path              = $null
                 Content           = $null
+                ExitMessage       = $null
                 ConfigurationFile = $null
             }
             if (Test-Path $summaryPath) {
                 $output.Path = $summaryPath
                 $output.Content = Get-Content -Path $summaryPath
+                $output.ExitMessage = ($output.Content | Select-String "Exit message").Line -replace '^ *Exit message: *', ''
                 # get last folder created - that's our setup
                 $lastLogFolder = Get-ChildItem -Path $rootPath -Directory | Sort-Object -Property Name -Descending | Select-Object -First 1 -ExpandProperty FullName
                 if (Test-Path $lastLogFolder\ConfigurationFile.ini) {
@@ -151,6 +162,7 @@ function Invoke-DbaAdvancedInstall {
         Port              = $Port
         Notes             = @()
         ExitCode          = $null
+        ExitMessage       = $null
         Log               = $null
         LogFile           = $null
         ConfigurationFile = $null
@@ -198,6 +210,7 @@ function Invoke-DbaAdvancedInstall {
     $connectionParams = @{
         ComputerName = $ComputerName
         ErrorAction  = "Stop"
+        UseSSL       = (Get-DbatoolsConfigValue -FullName 'PSRemoting.PsSession.UseSSL' -Fallback $false)
     }
     if ($Credential) { $connectionParams.Credential = $Credential }
     # need to figure out where to store the config file
@@ -208,9 +221,9 @@ function Invoke-DbaAdvancedInstall {
             Write-ProgressHelper -ExcludePercent -Activity $activity -Message "Copying configuration file to $ComputerName"
             $session = New-PSSession @connectionParams
             $chosenPath = Invoke-Command -Session $session -ScriptBlock { (Get-Item ([System.IO.Path]::GetTempPath())).FullName } -ErrorAction Stop
-            $remoteConfig = Join-DbaPath $chosenPath (Split-Path $ConfigurationPath -Leaf)
+            $remoteConfig = Join-DbaPath $chosenPath.TrimEnd('\') (Split-Path $ConfigurationPath -Leaf)
             Write-Message -Level Verbose -Message "Copying $($ConfigurationPath) to remote machine into $chosenPath"
-            Copy-Item -Path $ConfigurationPath -Destination $remoteConfig -ToSession $session -Force -ErrorAction Stop
+            $null = Send-File -Path $ConfigurationPath -Destination $chosenPath -Session $session -ErrorAction Stop
             $session | Remove-PSSession
         } catch {
             Stop-Function -Message "Failed to copy file $($ConfigurationPath) to $remoteConfig on $($ComputerName), exiting" -ErrorRecord $_
@@ -240,11 +253,12 @@ function Invoke-DbaAdvancedInstall {
         # Get setup log summary contents
         try {
             $summary = Get-SqlInstallSummary -ComputerName $ComputerName -Credential $Credential -Version $Version
+            $output.ExitMessage = $summary.ExitMessage
             $output.Log = $summary.Content
             $output.LogFile = $summary.Path
             $output.ConfigurationFile = $summary.ConfigurationFile
         } catch {
-            Write-Message -Level Warning -Message "Could not get the contents of the summary file from $($ComputerName). 'Log' property will be empty" -ErrorRecord $_
+            Write-Message -Level Warning -Message "Could not get the contents of the summary file from $($ComputerName). Related properties will be empty" -ErrorRecord $_
         }
     } catch {
         Stop-Function -Message "Installation failed" -ErrorRecord $_
@@ -270,7 +284,7 @@ function Invoke-DbaAdvancedInstall {
     if ($installResult.Successful) {
         $output.Successful = $true
     } else {
-        $msg = "Installation failed with exit code $($installResult.ExitCode). Expand 'Log' property to find more details."
+        $msg = "Installation failed with exit code $($installResult.ExitCode). Expand 'ExitMessage' and 'Log' property to find more details."
         $output.Notes += $msg
         Stop-Function -Message $msg
         return $output
@@ -282,6 +296,12 @@ function Invoke-DbaAdvancedInstall {
     # change port after the installation
     if ($Port) {
         $null = Set-DbaTcpPort -SqlInstance "$($ComputerName)\$($InstanceName)" -Credential $Credential -Port $Port -EnableException:$EnableException -Confirm:$false
+        try {
+            $null = Restart-DbaService -ComputerName $ComputerName -InstanceName $InstanceName -Credential $Credential -Type Engine -Force -EnableException:$EnableException -Confirm:$false
+        } catch {
+            $output.Notes += "Port for $($ComputerName)\$($InstanceName) has been changed, but instance restart failed ($_). Restart of instance is necessary for the new settings to become effective."
+        }
+
     }
     # restart if necessary
     try {
@@ -307,6 +327,6 @@ function Invoke-DbaAdvancedInstall {
             $output.Notes += "Restart is required for computer $($ComputerName) to finish the installation of Sql Server version $Version"
         }
     }
-    $output  | Select-DefaultView -Property ComputerName, InstanceName, Version, Port, Successful, Restarted, Installer, ExitCode, LogFile, Notes
+    $output | Select-DefaultView -Property ComputerName, InstanceName, Version, Port, Successful, Restarted, Installer, ExitCode, LogFile, Notes
     Write-Progress -Activity $activity -Completed
 }

@@ -1,4 +1,4 @@
-function Test-DbaTempdbConfig {
+function Test-DbaTempDbConfig {
     <#
     .SYNOPSIS
         Evaluates tempdb against several rules to match best practices.
@@ -19,7 +19,11 @@ function Test-DbaTempdbConfig {
         The target SQL Server instance or instances. SQL Server 2005 and higher are supported.
 
     .PARAMETER SqlCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER EnableException
         By default, when something goes wrong we try to catch it, interpret it and give you a friendly warning message.
@@ -27,7 +31,7 @@ function Test-DbaTempdbConfig {
         Using this switch turns this "nice by default" feature off and enables you to catch exceptions with your own try/catch.
 
     .NOTES
-        Tags: tempdb, configuration
+        Tags: Tempdb, Configuration
         Author: Michael Fal (@Mike_Fal), http://mikefal.net
 
         Website: https://dbatools.io
@@ -37,20 +41,20 @@ function Test-DbaTempdbConfig {
         Based on Amit Bannerjee's (@banerjeeamit) Get-TempDB function (https://github.com/amitmsft/SqlOnAzureVM/blob/master/Get-TempdbFiles.ps1)
 
     .LINK
-        https://dbatools.io/Test-DbaTempdbConfig
+        https://dbatools.io/Test-DbaTempDbConfig
 
     .EXAMPLE
-        PS C:\> Test-DbaTempdbConfig -SqlInstance localhost
+        PS C:\> Test-DbaTempDbConfig -SqlInstance localhost
 
         Checks tempdb on the localhost machine.
 
     .EXAMPLE
-        PS C:\> Test-DbaTempdbConfig -SqlInstance localhost | Select-Object *
+        PS C:\> Test-DbaTempDbConfig -SqlInstance localhost | Select-Object *
 
         Checks tempdb on the localhost machine. All rest results are shown.
 
     .EXAMPLE
-        PS C:\> Get-DbaRegServer -SqlInstance sqlserver2014a | Test-DbaTempdbConfig | Select-Object * | Out-GridView
+        PS C:\> Get-DbaRegServer -SqlInstance sqlserver2014a | Test-DbaTempDbConfig | Select-Object * | Out-GridView
 
         Checks tempdb configuration for a group of servers from SQL Server Central Management Server (CMS). Output includes all columns. Send output to GridView.
     #>
@@ -73,15 +77,28 @@ function Test-DbaTempdbConfig {
             $tfCheck = $server.Databases['tempdb'].Query("DBCC TRACEON (3604);DBCC TRACESTATUS(-1)")
             $current = ($tfCheck.TraceFlag -join ',').Contains('1118')
 
-            [PSCustomObject]@{
-                ComputerName   = $server.ComputerName
-                InstanceName   = $server.ServiceName
-                SqlInstance    = $server.DomainInstanceName
-                Rule           = 'TF 1118 Enabled'
-                Recommended    = $true
-                CurrentSetting = $current
-                IsBestPractice = $current -eq $true
-                Notes          = 'KB328551 describes how TF 1118 can benefit performance. SQL Server 2016 has this functionality enabled by default.'
+            If ($server.VersionMajor -gt 12) {
+                [PSCustomObject]@{
+                    ComputerName   = $server.ComputerName
+                    InstanceName   = $server.ServiceName
+                    SqlInstance    = $server.DomainInstanceName
+                    Rule           = 'TF 1118 Enabled'
+                    Recommended    = $false
+                    CurrentSetting = $current
+                    IsBestPractice = $true
+                    Notes          = 'SQL Server 2016 and above has this functionality enabled by default.'
+                }
+            } else {
+                [PSCustomObject]@{
+                    ComputerName   = $server.ComputerName
+                    InstanceName   = $server.ServiceName
+                    SqlInstance    = $server.DomainInstanceName
+                    Rule           = 'TF 1118 Enabled'
+                    Recommended    = $true
+                    CurrentSetting = $current
+                    IsBestPractice = $current -eq $true
+                    Notes          = 'KB328551 describes how TF 1118 can benefit performance. SQL Server 2016 has this functionality enabled by default.'
+                }
             }
 
             Write-Message -Level Verbose -Message "TF 1118 evaluated"
@@ -180,7 +197,7 @@ function Test-DbaTempdbConfig {
                 $equalSizeDataFiles = $false
             }
 
-            $value = [PSCustomObject]@{
+            [PSCustomObject]@{
                 ComputerName   = $server.ComputerName
                 InstanceName   = $server.ServiceName
                 SqlInstance    = $server.DomainInstanceName

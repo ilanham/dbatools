@@ -10,7 +10,11 @@ function Remove-DbaRegServer {
         The target SQL Server instance or instances.
 
     .PARAMETER SqlCredential
-        Login to the target instance using alternative credentials. Windows and SQL Authentication supported. Accepts credential objects (Get-Credential)
+        Login to the target instance using alternative credentials. Accepts PowerShell credentials (Get-Credential).
+
+        Windows Authentication, SQL Server Authentication, Active Directory - Password, and Active Directory - Integrated are all supported.
+
+        For MFA support, please use Connect-DbaInstance.
 
     .PARAMETER Name
         Specifies one or more names to include. Name is the visible name in SSMS CMS interface (labeled Registered Server Name)
@@ -82,12 +86,29 @@ function Remove-DbaRegServer {
             $InputObject += Get-DbaRegServer -SqlInstance $instance -SqlCredential $SqlCredential -Group $Group -ExcludeGroup $ExcludeGroup -Name $Name -ServerName $ServerName
         }
 
-        foreach ($regserver in $InputObject) {
-            $server = $regserver.Parent
+        if (-not $SqlInstance -and -not $InputObject) {
+            $InputObject += Get-DbaRegServer -Group $Group -ExcludeGroup $ExcludeGroup -Name $Name -ServerName $ServerName
+        }
 
-            if ($Pscmdlet.ShouldProcess($regserver.Parent, "Removing $regserver")) {
+        foreach ($regserver in $InputObject) {
+            if ($regserver.Source -eq "Azure Data Studio") {
+                Stop-Function -Message "You cannot use dbatools to remove or add registered servers in Azure Data Studio" -Continue
+            }
+
+            if ($regserver.ID) {
+                $defaults = "ComputerName", "InstanceName", "SqlInstance", "Name", "ServerName", "Status"
+                $target = $regserver.Parent
+            } else {
+                $defaults = "Name", "ServerName", "Status"
+                $target = "Local Registered Server Groups"
+            }
+
+            if ($Pscmdlet.ShouldProcess($target, "Removing $regserver")) {
                 $null = $regserver.Drop()
-                Disconnect-RegServer -Server $server
+
+                if ($regserver.ID) {
+                    Disconnect-RegServer -Server $regserver.Parent
+                }
 
                 try {
                     [pscustomobject]@{
@@ -97,9 +118,9 @@ function Remove-DbaRegServer {
                         Name         = $regserver.Name
                         ServerName   = $regserver.ServerName
                         Status       = "Dropped"
-                    }
+                    } | Select-DefaultView -Property $defaults
                 } catch {
-                    Stop-Function -Message "Failed to drop $regserver on $server" -ErrorRecord $_ -Continue
+                    Stop-Function -Message "Failed to drop $regserver on $target" -ErrorRecord $_ -Continue
                 }
             }
         }
